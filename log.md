@@ -1,0 +1,1 @@
+## Priority Rule: DSA and Flagship before anything else then add on top of that if time permits. 
