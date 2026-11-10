@@ -28,9 +28,9 @@ Examples of Bad lines:
 ```
 
 ### 2. What happens with ERR?
-**Decision:** Keep the line containing error.
+**Decision:** A line with ERR will not be shown in the over-limit count, min, max, or average. It will be in reading count.
 
-**Why:** It will provide further insight into patterns involving the types of sensors prone to error for troubleshooting.
+**Why:** It will provide further insight into patterns involving the types of sensors prone to error for troubleshooting without skewing the metrics of the monitor.
 
 ### 3. What happens with a sensor type not in limits?
 **Decision:** An alarm will appear on the dashboard.
