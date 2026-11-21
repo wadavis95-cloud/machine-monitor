@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > **In this project:** Claude sends one task at a time to Codex (codex-run skill), reviews it, and explains it to the user before the next task. Don't start the next task until the user says so.
 
-**Goal:** Train a ladder of three remaining-useful-life (RUL) models (linear, trees, LSTM) on NASA C-MAPSS FD001, score them once on the official test set, and show the LSTM's per-cycle prediction in the dashboard.
+**Goal:** Train a ladder of three remaining-useful-life (RUL) models (linear, trees, LSTM) on NASA C-MAPSS FD001, score them once on the official test set, and show the shipped model's (gradient boosting's) per-cycle prediction in the dashboard.
 
 **Architecture:** An offline `rul/` package does the data prep, the models, the evaluation, and a training entry point. It writes `data/predictions_FD001.csv` and `reports/rul_results.md`. `app.py` reads the CSV at startup *if present* and attaches `rul_pred` and `split` to readings. The app never imports torch or scikit-learn.
 
@@ -174,7 +174,7 @@
 **Interfaces:**
 - Produces:
   - `create_app(predictions_path: Path | None = <data/predictions_FD001.csv>)`. Existing calls to `create_app()` keep working.
-  - If the file exists, the app loads `unit, cycle, split, rul_lstm` at startup. Duplicate (unit, cycle) raises `ValueError` at startup.
+  - If the file exists, the app loads `unit, cycle, split, rul_trees` at startup (the shipped model; see the decision note in the spec). Duplicate (unit, cycle) raises `ValueError` at startup.
   - `/live` and `/cycle` readings gain `rul_pred: int` and `split: "train"|"val"` when there's a matching valid row. Otherwise both keys are absent.
   - The app uses pandas only; no torch or sklearn import.
 

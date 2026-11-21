@@ -77,7 +77,7 @@ Second choice: **when the model runs.** **Train offline and save predictions to 
 
 ## App changes
 - At startup, `app.py` loads `data/predictions_FD001.csv` **if present**. If it's absent, the app works exactly as today (graceful degradation).
-- `/live` (and `/cycle`) readings gain `rul_pred` (from the LSTM) and `split`.
+- `/live` (and `/cycle`) readings gain `rul_pred` (from gradient boosting, the shipped model; see the decision log) and `split`.
 - The dashboard shows "Est. ~N cycles left" next to the readings, plus a badge: **seen in training** / **validation (unseen)**. Optional: the true RUL alongside it, for comparison.
 - CSV handling *(Claude's call)*:
   - Predictions are clipped to [0, 125] and rounded to whole cycles. 0 stays 0.
@@ -106,3 +106,6 @@ Second choice: **when the model runs.** **Train offline and save predictions to 
 
 ## Left to the builder
 - Exact sensor drop list (by variance), scaler type, LSTM size, epochs, learning rate, padding method, and whether rung B is a random forest or gradient boosting. Each choice is recorded in the report or LEARNING.md with a one-line reason.
+
+## Decision log
+- **2026-11-21: ship gradient boosting (`rul_trees`), not the LSTM.** On validation the two tied: LSTM 13.76 ± 0.55 vs boosting 13.96 ± 0.02 RMSE, so the gap is within seed noise. The LSTM's validation score is also slightly optimistic, because early stopping used the same engines. Boosting is about 25× more stable across seeds, simpler, and has no PyTorch dependency. This decision was made **before** the test set was scored, so the test set can't influence which model ships. The user made this call.

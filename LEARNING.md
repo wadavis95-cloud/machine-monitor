@@ -35,3 +35,6 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Baseline | The simplest reasonable guess, the bar every fancier model must clear | "My baseline was linear regression; each more complex model had to beat its error to justify itself." |
 | Feature engineering | Summarize a week of temperatures by its average and how quickly it warmed. | "I gave the tree model two numbers per sensor window, the average reading and its change per cycle." |
 | Random forest and gradient boosting | A forest averages guesses from independent teams. Boosting sends each new team to work on what the earlier teams missed. | "I compared both on the same validation rows and chose boosting because it gave lower error across three seeds." |
+| LSTM readout | Read the whole weather diary, then use the final notes to make one forecast. | "I used the LSTM's final window step and a linear output layer to predict one number, the cycles left." |
+| Early stopping | Save your best practice lap and stop after several slower laps. | "I stopped after four epochs without better validation RMSE and restored the weights from the best epoch." |
+| Seeds and reproducibility | Start each card shuffle from a recorded random starting point. | "I fixed the seed for the model's starting weights and batch order, then tried three seeds to measure variation." |
