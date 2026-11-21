@@ -16,3 +16,6 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Optional chaining (`?.`) | Update the whiteboard if there is one, then keep going. | "I used `chart?.update()` to redraw only when the chart exists." |
 | Port | An apartment number in your computer's "building" (`127.0.0.1`); one server per apartment | "A port identifies which program on a machine receives traffic. Two servers can't listen on the same port." |
 | Restart after code changes | A server reads your code once at startup, like printing a page; editing the file doesn't change the printout | "A running server keeps the code it started with, so after a change you restart it, or use a dev/reload mode." |
+| Remaining useful life (RUL) label | A countdown to the engine's last cycle, with zero at failure. | "For each training row, I subtract its cycle from that engine's failure cycle to get the true cycles left." |
+| Capping RUL at 125 | A road sign says “more than 125 miles” until the destination gets closer. | "For training, all labels above 125 become 125, because early readings may give little evidence of exactly how far away failure is." |
+| Virtual environment | A toolbox for one project with its own set of tools. | "A virtual environment keeps the project's Python packages separate from other projects, and pinning versions records the ones I used." |
