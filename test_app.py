@@ -170,3 +170,74 @@ def test_live_feed_rejects_invalid_cursors(client, cursor):
 
 def test_live_feed_rejects_unknown_engine(client):
     assert client.get("/api/engine/999/live").status_code == 404
+
+
+@pytest.fixture
+def predictions_path(tmp_path):
+    path = tmp_path / "predictions.csv"
+    path.write_text(
+        "# model_commit=abc123 run_date=2026-11-21\n"
+        "unit,cycle,split,rul_linear,rul_trees,rul_lstm\n"
+        "1,1,train,88,42,77\n"
+        "1,4,train,90,NaN,80\n"
+        "1,5,train,90,no estimate,80\n"
+        "1,6,train,90,inf,80\n"
+        "2,287,val,13,0,22\n"
+    )
+    return path
+
+
+def test_live_includes_rul_and_split(predictions_path):
+    client = create_app(predictions_path=predictions_path).test_client()
+    response = client.get("/api/engine/1/live")
+    reading = response.get_json()["readings"][0]
+
+    assert response.status_code == 200
+    assert reading["rul_pred"] == 42
+    assert type(reading["rul_pred"]) is int
+    assert reading["split"] == "train"
+
+
+def test_cycle_includes_rul_and_split(predictions_path):
+    client = create_app(predictions_path=predictions_path).test_client()
+    response = client.get("/api/engine/2/cycle/287")
+    reading = response.get_json()
+
+    assert response.status_code == 200
+    assert reading["rul_pred"] == 0
+    assert reading["split"] == "val"
+
+
+def test_live_without_predictions_file(tmp_path):
+    client = create_app(predictions_path=tmp_path / "missing.csv").test_client()
+    response = client.get("/api/engine/1/live")
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert response.cache_control.no_store
+    assert body["done"] is False
+    reading, = body["readings"]
+    assert (reading["unit"], reading["cycle"]) == (1, 1)
+    assert "s_2" in reading
+    assert "rul_pred" not in reading and "split" not in reading
+
+
+def test_live_missing_row_omits_rul(predictions_path, monkeypatch):
+    now = 100.0
+    monkeypatch.setattr("app.monotonic", lambda: now)
+    client = create_app(predictions_path=predictions_path).test_client()
+    assert client.get("/api/engine/1/live").status_code == 200
+    now += 2.5
+
+    response = client.get("/api/engine/1/live?after=2")
+    readings = response.get_json()["readings"]
+    assert [reading["cycle"] for reading in readings] == [3, 4, 5, 6]
+    assert all("rul_pred" not in reading and "split" not in reading for reading in readings)
+
+
+def test_duplicate_prediction_rows_raise(tmp_path):
+    path = tmp_path / "predictions.csv"
+    path.write_text("unit,cycle,split,rul_trees\n1,1,train,42\n1,1,val,NaN\n")
+
+    with pytest.raises(ValueError, match=r"Duplicate.*unit.*cycle"):
+        create_app(predictions_path=path)
