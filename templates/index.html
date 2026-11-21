@@ -21,6 +21,10 @@
     dl > div, .chart-panel { background: white; border: 1px solid #d3dfe8; border-radius: .75rem; padding: 1rem; }
     dt { font-size: .9rem; color: #455a70; }
     dd { margin: .4rem 0 0; font-size: 1.4rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .rul-summary { margin-bottom: 1rem; }
+    .rul-badge { padding: .2rem .5rem; border-radius: .5rem; background: #edf2f6; color: #455a70; font-size: .875rem; }
+    .rul-badge[data-split="val"] { background: #dcebf3; color: #173d59; font-weight: 650; }
+    .rul-caption { margin-top: .4rem; color: #455a70; font-size: .875rem; }
     .warning { margin-top: 1rem; padding: .75rem 1rem; border-radius: .5rem; background: #fff1d0; color: #613900; }
     .warning[data-level="attention"] { background: #fce6e8; color: #851c2a; }
     .warning button { margin-top: .5rem; font: inherit; }
@@ -120,6 +124,10 @@
             <div><dt>High-pressure compressor outlet (T30)</dt><dd><span id="s_3{{ suffix }}" data-reading="s_3">—</span> °R</dd></div>
             <div><dt>Low-pressure turbine outlet (T50)</dt><dd><span id="s_4{{ suffix }}" data-reading="s_4">—</span> °R</dd></div>
           </dl>
+          <div class="rul-summary" data-rul-summary hidden>
+            <p><strong data-rul hidden></strong> <span class="rul-badge" data-split hidden></span></p>
+            <p class="rul-caption">Estimate from a gradient boosting model trained offline. Demo only.</p>
+          </div>
         </section>
 
         <section class="chart-panel" aria-labelledby="chart-heading{{ suffix }}">
@@ -160,6 +168,10 @@
     function startPolling(panel) {
       const fields = panel.querySelectorAll("[data-reading]");
       const status = panel.querySelector("[data-status]");
+      const rulSummary = panel.querySelector("[data-rul-summary]");
+      const rul = panel.querySelector("[data-rul]");
+      const splitBadge = panel.querySelector("[data-split]");
+      const splitLabels = { train: "seen in training", val: "validation (unseen)" };
       const canvas = panel.querySelector("canvas");
       const band = {
         lower: Number(canvas.dataset.bandLower),
@@ -223,6 +235,17 @@
         for (const field of fields) {
           field.textContent = reading[field.dataset.reading];
         }
+
+        // Zero is still an estimate. Hide the previous estimate if this row has none.
+        const hasRul = Number.isInteger(reading.rul_pred);
+        rulSummary.hidden = !hasRul;
+        rul.hidden = !hasRul;
+        rul.textContent = hasRul ? `Est. ~${reading.rul_pred} cycles left` : "";
+        const splitLabel = hasRul ? splitLabels[reading.split] : "";
+        splitBadge.hidden = !splitLabel;
+        splitBadge.textContent = splitLabel ?? "";
+        splitBadge.dataset.split = splitLabel ? reading.split : "";
+
         const point = { x: reading.cycle, y: reading.s_2 };
         trace?.data.push(point);
 
