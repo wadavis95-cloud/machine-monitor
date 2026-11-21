@@ -51,3 +51,4 @@ Before writing a reply or handoff for Claude, read `.collab/claude-budget.txt`:
 
 ## Learning log
 After each change, append 1-2 rows to `LEARNING.md` for any new concept, in plain words with an everyday analogy and an interview one-liner. Skip concepts that are already listed. The user is a beginner, so keep the wording simple.
+Then regenerate the flashcards: `python3 ~/ai-shared/tools/learning_to_anki.py .` (this writes `flashcards.txt`). Keep the three-column table format exactly, since the script parses it.
