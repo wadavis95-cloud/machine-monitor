@@ -50,3 +50,12 @@
 | LSTM, 32 hidden units | 14.2161 ± 0.5191 | 387.8166 ± 19.4067 |
 
 **Conclusion:** Use 16 hidden units. That configuration had lower mean RMSE and was smaller. Its 0.20-cycle lead over boosting was within the LSTM's seed spread, so the validation results show no clear RMSE winner. The validation cutoffs also selected the best epoch for each LSTM run. This comparison is for tuning.
+
+## 2026-11-21 · Frozen FD001 evaluation
+
+- **Base commit:** `f73740d7e96461f742e26a9851c68d84431fe768`, plus the Task 6 training entry point.
+- **Data versions (Git blobs):** Train `d2809918c8b75fa3319714658ae994deb2017a89`, test histories `7844fbf8d6ad32176f92544ad4f4c456481d930d`, test labels `e8dd7cfeee96d2dfd55166f5758227d36c096dd3`.
+- **Command and runtime:** `.venv/bin/python -B -m rul.train`, 16.772 seconds on CPU with two PyTorch threads.
+- **Config:** Seed 42 for splitting, validation cutoffs, the 100-tree depth-5 boosting model, and the 16-unit LSTM (up to 20 epochs, learning rate 0.003, patience 4). Feature selection and scaling used the 80 training engines. All fitted models and their preprocessing were saved to `models/rul.joblib` before test scoring.
+- **Results:** The [results report](reports/rul_results.md) records all validation and test metrics and the model card. Capped test RMSE was 20.8469 for linear, 13.3666 for boosting, and 13.5453 for the LSTM.
+- **Conclusion:** Gradient boosting was chosen on validation on 2026-11-21. The official holdout was scored once, with one prediction per engine. The shipping decision and settings stayed fixed.
