@@ -1,0 +1,97 @@
+from pathlib import Path
+from threading import Lock
+from time import monotonic
+
+from flask import Flask, abort, jsonify, render_template, request
+
+from loader import load_data
+from replayer import EngineReplayer
+
+
+def create_app():
+    app = Flask(__name__, static_folder=None)
+    data = load_data(Path(__file__).parent / "data" / "train_FD001.txt")
+    final_cycles = data.groupby("unit")["cycle"].max()
+    early_readings = data.loc[data["cycle"].between(1, 30)]
+    readings_by_cycle = data.set_index(["unit", "cycle"], drop=False)
+    live_started_at = {}
+    replayers = {}
+    playback_lock = Lock()
+
+    def render_dashboard(selected, multi=False):
+        try:
+            selected = list(dict.fromkeys(int(unit) for unit in selected))
+        except ValueError:
+            abort(404, description="Engine not found.")
+        if any(unit not in final_cycles.index for unit in selected):
+            abort(404, description="Engine not found.")
+
+        panels = []
+        for unit in selected:
+            reference = early_readings.loc[early_readings["unit"] != unit, "s_2"]
+            lower, upper = reference.quantile([0.05, 0.95])
+            panels.append({
+                "unit": unit,
+                "final_cycle": int(final_cycles.loc[unit]),
+                "band_lower": float(lower),
+                "band_upper": float(upper),
+            })
+
+        return render_template(
+            "index.html",
+            unit=selected[0],
+            live=request.args.get("mode") == "live",
+            units=final_cycles.index,
+            selected=selected,
+            panels=panels,
+            multi=multi,
+        )
+
+    @app.get("/")
+    def dashboard():
+        return render_dashboard([request.args.get("unit", "1")])
+
+    @app.get("/engines")
+    def multi_engine_dashboard():
+        return render_dashboard(request.args.getlist("unit") or [1, 2, 3, 4], multi=True)
+
+    @app.get("/api/engine/<int:unit>/next")
+    def next_reading(unit):
+        with playback_lock:
+            if unit not in replayers:
+                replayers[unit] = EngineReplayer(data, unit)
+            row = replayers[unit].next()
+
+        return jsonify(row if row is not None else {"done": True})
+
+    @app.get("/api/engine/<int:unit>/cycle/<int:cycle>")
+    def cycle_reading(unit, cycle):
+        try:
+            row = readings_by_cycle.loc[(unit, cycle), :].to_dict()
+        except KeyError:
+            return jsonify({"error": "Reading not found"}), 404
+        row["unit"] = unit
+        row["cycle"] = cycle
+        return jsonify(row)
+
+    @app.get("/api/engine/<int:unit>/live")
+    def live_readings(unit):
+        if unit not in final_cycles.index:
+            abort(404, description="Engine not found.")
+        after = request.args.get("after", "0")
+        if not after.isascii() or not after.isdecimal() or len(after) > 10:
+            abort(400, description="Invalid cycle cursor.")
+        after = int(after)
+
+        # The first viewer starts this engine's clock. Later viewers share it.
+        with playback_lock:
+            now = monotonic()
+            started_at = live_started_at.setdefault(unit, now)
+        final_cycle = int(final_cycles.loc[unit])
+        available_cycle = min(final_cycle, int((now - started_at) * 2) + 1)
+        rows = readings_by_cycle.loc[unit].loc[after + 1:available_cycle]
+        response = jsonify(readings=rows.to_dict("records"), done=available_cycle == final_cycle)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    return app

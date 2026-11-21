@@ -1,0 +1,285 @@
+{% set mode = 'live' if live else 'replay' %}
+{% set title = 'Multi-engine monitor' if multi else 'Engine ' ~ unit ~ ' · Simulated run to failure' %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #17283a; background: #edf2f6; }
+    body { margin: 0; }
+    main { max-width: 70rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+    h1, h2, p { margin: 0; }
+    header p, .chart-panel p { margin-top: .5rem; color: #455a70; }
+    .playback { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; margin: 1.25rem 0; }
+    .engine-picker { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+    .engine-picker select { font: inherit; padding: .5rem; }
+    .playback button { font: inherit; padding: .5rem .75rem; cursor: pointer; }
+    .status { padding: .75rem 1rem; background: #dcebf3; border-radius: .5rem; }
+    dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: .75rem; }
+    dl > div, .chart-panel { background: white; border: 1px solid #d3dfe8; border-radius: .75rem; padding: 1rem; }
+    dt { font-size: .9rem; color: #455a70; }
+    dd { margin: .4rem 0 0; font-size: 1.4rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .warning { margin-top: 1rem; padding: .75rem 1rem; border-radius: .5rem; background: #fff1d0; color: #613900; }
+    .warning[data-level="attention"] { background: #fce6e8; color: #851c2a; }
+    .warning button { margin-top: .5rem; font: inherit; }
+    .engine-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    .engine-grid > article { min-width: 0; background: #f8fafc; border: 1px solid #d3dfe8; border-radius: .75rem; padding: 1rem; }
+    .engine-grid article header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .engine-grid .status { margin: .75rem 0; }
+    .engine-grid dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .engine-grid h3 { margin: 0; font-size: 1rem; }
+    .engine-grid .chart { height: clamp(15rem, 35vh, 22rem); }
+    @media (max-width: 52rem) { .engine-grid { grid-template-columns: minmax(0, 1fr); } }
+    .chart { position: relative; height: clamp(15rem, 45vh, 28rem); margin-top: 1rem; }
+  </style>
+  <!-- Load Chart.js for the sensor history plot. -->
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>{{ title }}</h1>
+      <p>Every engine in NASA’s C-MAPSS FD001 training dataset is simulated until it fails. Each reading represents one operating cycle.</p>
+    </header>
+
+    <div class="playback">
+      {% if multi %}
+      <form class="engine-picker" action="{{ url_for('multi_engine_dashboard') }}" method="get">
+        {% for engine in selected %}
+        <input type="hidden" name="unit" value="{{ engine }}">
+        {% endfor %}
+        <label for="mode-picker">Mode</label>
+        <select id="mode-picker" name="mode">
+          <option value="replay"{% if not live %} selected{% endif %}>Replay</option>
+          <option value="live"{% if live %} selected{% endif %}>Simulated live</option>
+        </select>
+        <button type="submit">Apply mode</button>
+      </form>
+      {% if selected|length < units|length %}
+      <form class="engine-picker" action="{{ url_for('multi_engine_dashboard') }}" method="get">
+        {% for engine in selected %}
+        <input type="hidden" name="unit" value="{{ engine }}">
+        {% endfor %}
+        <input type="hidden" name="mode" value="{{ mode }}">
+        <label for="add-engine">Engine</label>
+        <select id="add-engine" name="unit">
+          {% for engine in units if engine not in selected %}
+          <option value="{{ engine }}">{{ engine }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Add engine</button>
+      </form>
+      {% endif %}
+      <a href="{{ url_for('dashboard', unit=unit, mode=mode) }}">Single-engine view</a>
+      {% else %}
+      <form class="engine-picker" action="{{ url_for('dashboard') }}" method="get">
+        <label for="engine-picker">Engine</label>
+        <select id="engine-picker" name="unit">
+          {% for engine in units %}
+          <option value="{{ engine }}"{% if engine == unit %} selected{% endif %}>{{ engine }}</option>
+          {% endfor %}
+        </select>
+        <label for="mode-picker">Mode</label>
+        <select id="mode-picker" name="mode">
+          <option value="replay"{% if not live %} selected{% endif %}>Replay</option>
+          <option value="live"{% if live %} selected{% endif %}>Simulated live</option>
+        </select>
+        <button type="submit">Load engine</button>
+      </form>
+      <a href="{{ url_for('multi_engine_dashboard', mode=mode) }}">Multi-engine view</a>
+      {% endif %}
+      {% if live %}
+      <p>The server sets the pace for this shared simulated feed.</p>
+      {% else %}
+      <button id="restart" type="button">Restart replay</button>
+      {% endif %}
+    </div>
+
+    <div{% if multi %} class="engine-grid"{% endif %}>
+      {% for panel in panels %}
+      {% set suffix = '-' ~ panel.unit if multi else '' %}
+      {% set heading = 'h3' if multi else 'h2' %}
+      <article data-engine-panel{% if multi %} aria-labelledby="engine-heading{{ suffix }}"{% endif %}>
+        {% if multi %}
+        <header>
+          <h2 id="engine-heading{{ suffix }}">Engine {{ panel.unit }}</h2>
+          {% if selected|length > 1 %}
+          <a href="{{ url_for('multi_engine_dashboard', unit=selected|reject('equalto', panel.unit)|list, mode=mode) }}" aria-label="Remove engine {{ panel.unit }}">Remove</a>
+          {% endif %}
+        </header>
+        {% endif %}
+        <p class="status" id="status{{ suffix }}" data-status role="status">Waiting for the first reading…</p>
+
+        <section aria-labelledby="latest-heading{{ suffix }}">
+          <{{ heading }} id="latest-heading{{ suffix }}">Latest readings</{{ heading }}>
+          <dl>
+            <div><dt>Operating cycle</dt><dd id="cycle{{ suffix }}" data-reading="cycle">—</dd></div>
+            <div><dt>Low-pressure compressor outlet (T24)</dt><dd><span id="s_2{{ suffix }}" data-reading="s_2">—</span> °R</dd></div>
+            <div><dt>High-pressure compressor outlet (T30)</dt><dd><span id="s_3{{ suffix }}" data-reading="s_3">—</span> °R</dd></div>
+            <div><dt>Low-pressure turbine outlet (T50)</dt><dd><span id="s_4{{ suffix }}" data-reading="s_4">—</span> °R</dd></div>
+          </dl>
+        </section>
+
+        <section class="chart-panel" aria-labelledby="chart-heading{{ suffix }}">
+          <{{ heading }} id="chart-heading{{ suffix }}">Low-pressure compressor outlet temperature</{{ heading }}>
+          <p>Sensor T24 (s_2), in degrees Rankine, over the engine’s operating cycles.</p>
+          <p>Shaded band: typical early-run T24 range ({{ "%.2f"|format(panel.band_lower) }}–{{ "%.2f"|format(panel.band_upper) }} °R), based on the middle 90% of readings from cycles 1–30 of the other engines. Yellow marks repeated high readings (three in the last ten cycles). Red marks five consecutive cycles outside the band. The diamond marks simulated failure.</p>
+          <div class="warning" id="warning{{ suffix }}" data-warning hidden>
+            <p id="warning-message{{ suffix }}" data-warning-message role="status"></p>
+            <button id="acknowledge{{ suffix }}" data-acknowledge type="button">Acknowledge</button>
+          </div>
+          <div class="chart">
+            <canvas
+              id="chart{{ suffix }}"
+              role="img"
+              aria-label="Low-pressure compressor outlet temperature in degrees Rankine by operating cycle"
+              data-band-lower="{{ panel.band_lower }}"
+              data-band-upper="{{ panel.band_upper }}"
+              data-live="{{ 1 if live else 0 }}"
+              data-unit="{{ panel.unit }}"
+              data-final-cycle="{{ panel.final_cycle }}"
+            ></canvas>
+          </div>
+        </section>
+      </article>
+      {% endfor %}
+    </div>
+  </main>
+
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("restart")?.addEventListener("click", () => {
+        window.location.reload();
+      });
+      document.querySelectorAll("[data-engine-panel]").forEach(startPolling);
+    });
+
+    function startPolling(panel) {
+      const fields = panel.querySelectorAll("[data-reading]");
+      const status = panel.querySelector("[data-status]");
+      const canvas = panel.querySelector("canvas");
+      const band = {
+        lower: Number(canvas.dataset.bandLower),
+        upper: Number(canvas.dataset.bandUpper)
+      };
+      const live = canvas.dataset.live === "1";
+      const unit = Number(canvas.dataset.unit);
+      const finalCycle = Number(canvas.dataset.finalCycle);
+      const warning = panel.querySelector("[data-warning]");
+      const warningMessage = panel.querySelector("[data-warning-message]");
+      panel.querySelector("[data-acknowledge]").addEventListener("click", () => {
+        warning.hidden = true;
+      });
+
+      // Draw the reference range behind the sensor trace.
+      const referenceBand = {
+        id: "referenceBand",
+        beforeDatasetsDraw({ ctx, chartArea, scales }) {
+          const top = scales.y.getPixelForValue(band.upper);
+          const bottom = scales.y.getPixelForValue(band.lower);
+          ctx.save();
+          ctx.fillStyle = "#dcebf3";
+          ctx.fillRect(chartArea.left, top, chartArea.width, bottom - top);
+          ctx.restore();
+        }
+      };
+      const chart = new Chart(canvas, {
+        type: "line",
+        plugins: [referenceBand],
+        data: {
+          datasets: [
+            { label: "Simulated failure endpoint", data: [], showLine: false, pointStyle: "rectRot", pointRadius: 6, borderColor: "#a52835", backgroundColor: "#a52835" },
+            { label: "Needs attention · sustained deviation", data: [], showLine: false, pointRadius: 4, borderColor: "#a52835", backgroundColor: "#c63845" },
+            { label: "Warning · repeated high readings", data: [], showLine: false, pointRadius: 4, borderColor: "#805600", backgroundColor: "#efd035" },
+            { label: "T24 (°R)", data: [], borderColor: "#006d83", pointRadius: 0, pointHitRadius: 8 }
+          ]
+        },
+        options: {
+          animation: false,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { type: "linear", title: { display: true, text: "Operating cycle" }, ticks: { precision: 0 } },
+            y: { suggestedMin: band.lower, suggestedMax: band.upper, title: { display: true, text: "Temperature (°R)" } }
+          }
+        }
+      });
+
+      // Poll every half second, skipping ticks while a request is pending.
+      const [failure, deviations, highWarnings, trace] = chart.data.datasets;
+      let outsideStreak = [];
+      let recentHighs = [];
+      let repeatedHighs = false;
+      let nextCycle = 1;
+      let pending = false;
+      function plotReading(reading) {
+        for (const field of fields) {
+          field.textContent = reading[field.dataset.reading];
+        }
+        const point = { x: reading.cycle, y: reading.s_2 };
+        trace.data.push(point);
+
+        if (point.y < band.lower || point.y > band.upper) {
+          outsideStreak.push(point);
+          if (outsideStreak.length === 5) {
+            deviations.data.push(...outsideStreak);
+            warning.dataset.level = "attention";
+            warningMessage.textContent = `Needs attention. Review T24 trend. Outside the fleet range since cycle ${outsideStreak[0].x}. Warning triggered at cycle ${point.x}.`;
+            warning.hidden = false;
+          } else if (outsideStreak.length > 5) {
+            deviations.data.push(point);
+          }
+        } else {
+          outsideStreak = [];
+        }
+
+        recentHighs = recentHighs.filter(high => high.x >= point.x - 9);
+        const isHigh = point.y > band.upper;
+        if (isHigh) recentHighs.push(point);
+        if (recentHighs.length >= 3 && isHigh && outsideStreak.length < 5) {
+          highWarnings.data.push(point);
+          if (!repeatedHighs && (warning.hidden || warning.dataset.level !== "attention")) {
+            warning.dataset.level = "warning";
+            warningMessage.textContent = `Warning at cycle ${point.x}. T24 exceeded the fleet range three times in ten cycles.`;
+            warning.hidden = false;
+          }
+        }
+        repeatedHighs = recentHighs.length >= 3;
+
+        if (point.x === finalCycle) failure.data.push(point);
+      }
+
+      const timer = setInterval(async () => {
+        if (pending) return;
+        pending = true;
+
+        try {
+          const path = live ? `live?after=${nextCycle - 1}` : `cycle/${nextCycle}`;
+          const response = await fetch(`/api/engine/${unit}/${path}`);
+          if (!response.ok) throw new Error("Request failed");
+
+          const result = await response.json();
+          const readings = live ? result.readings : [result];
+          for (const reading of readings) {
+            plotReading(reading);
+            nextCycle = reading.cycle + 1;
+          }
+          if (readings.length) chart.update();
+          if (live ? result.done : nextCycle > finalCycle) {
+            clearInterval(timer);
+            status.textContent = `Simulation complete · Failure endpoint at cycle ${finalCycle}.`;
+          } else {
+            status.textContent = live ? "Receiving simulated live readings" : "Replaying simulated readings";
+          }
+        } catch {
+          status.textContent = "Could not load the next reading. Retrying…";
+        } finally {
+          pending = false;
+        }
+      }, 500);
+    }
+  </script>
+</body>
+</html>
