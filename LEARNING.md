@@ -1,0 +1,14 @@
+# Learning log
+
+Concepts from this project, in plain words. Review it now and then. Repetition beats cramming.
+
+| Concept | Plain-words picture | Interview one-liner |
+|---|---|---|
+| Endpoint | A counter at a store; each one handles one kind of request | "An endpoint is a URL on the server that handles one kind of request, e.g. `/live` returns new readings." |
+| Simulated live feed | A recorded game replayed on TV as if live | "`/live` replays historical data at 2 cycles/sec so it behaves like a real-time feed." |
+| Cursor / `after=N` | A bookmark: "give me everything after page N" | "The client sends its cursor, so the server only returns new rows and no duplicates." |
+| Stateless endpoint | The server remembers nothing about you; each request brings its own bookmark | "`/live` is stateless, so each tab is independent. The old `/next` kept one shared cursor on the server, and tabs skipped each other's readings." |
+| Race condition | Two people trying to use a one-person bathroom at once | "Two requests at the same moment could both try to start the clock and overwrite each other." |
+| Lock | The bathroom door lock: one at a time | "A lock makes check-then-write happen as one step, so the clock starts exactly once." |
+| Removing dead code | Don't repair a room nobody uses; remove it | "I confirmed only tests called `/next`, removed it to cut maintenance and a known bug, and verified with tests in an isolated commit." |
+| 404 vs 400 | 404 = "that doesn't exist"; 400 = "your request is malformed" | "404 for an unknown engine, 400 for a garbage cursor like `after=banana`." |

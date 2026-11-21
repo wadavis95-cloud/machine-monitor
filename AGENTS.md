@@ -42,3 +42,12 @@ The user works with you directly between brainstorming sessions with Claude. Whe
 - Open problems, ideas, and questions for brainstorming
 - Current test status (exact summary lines)
 Claude reads only this file and `git log --oneline` to catch up, so keep it accurate and short.
+
+## Claude's token budget
+Before writing a reply or handoff for Claude, read `.collab/claude-budget.txt`:
+- `normal`: use the standard limits (reply ≤180 words, handoff ≤200).
+- `low`: reply ≤80 words and handoff ≤100. Only status, files changed, test lines, and blockers. Skip Concepts; the user can ask you directly.
+- `critical`: one line only (status + test result). Save any detail to `.collab/details.md` for later.
+
+## Learning log
+After each change, append 1-2 rows to `LEARNING.md` for any new concept, in plain words with an everyday analogy and an interview one-liner. Skip concepts that are already listed. The user is a beginner, so keep the wording simple.
