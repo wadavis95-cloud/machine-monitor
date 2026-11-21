@@ -142,6 +142,7 @@
               data-final-cycle="{{ panel.final_cycle }}"
             ></canvas>
           </div>
+          <p data-chart-notice role="status" hidden>Chart unavailable. Readings still updating.</p>
         </section>
       </article>
       {% endfor %}
@@ -185,7 +186,7 @@
           ctx.restore();
         }
       };
-      const chart = new Chart(canvas, {
+      const chart = typeof Chart === "function" ? new Chart(canvas, {
         type: "line",
         plugins: [referenceBand],
         data: {
@@ -205,31 +206,35 @@
             y: { suggestedMin: band.lower, suggestedMax: band.upper, title: { display: true, text: "Temperature (°R)" } }
           }
         }
-      });
+      }) : null;
+      if (!chart) {
+        canvas.parentElement.hidden = true;
+        panel.querySelector("[data-chart-notice]").hidden = false;
+      }
 
       // Poll every half second, skipping ticks while a request is pending.
-      const [failure, deviations, highWarnings, trace] = chart.data.datasets;
+      const [failure, deviations, highWarnings, trace] = chart?.data.datasets ?? [];
       let outsideStreak = [];
       let recentHighs = [];
       let repeatedHighs = false;
       let nextCycle = 1;
       let pending = false;
-      function plotReading(reading) {
+      function updateReading(reading) {
         for (const field of fields) {
           field.textContent = reading[field.dataset.reading];
         }
         const point = { x: reading.cycle, y: reading.s_2 };
-        trace.data.push(point);
+        trace?.data.push(point);
 
         if (point.y < band.lower || point.y > band.upper) {
           outsideStreak.push(point);
           if (outsideStreak.length === 5) {
-            deviations.data.push(...outsideStreak);
+            deviations?.data.push(...outsideStreak);
             warning.dataset.level = "attention";
             warningMessage.textContent = `Needs attention. Review T24 trend. Outside the fleet range since cycle ${outsideStreak[0].x}. Warning triggered at cycle ${point.x}.`;
             warning.hidden = false;
           } else if (outsideStreak.length > 5) {
-            deviations.data.push(point);
+            deviations?.data.push(point);
           }
         } else {
           outsideStreak = [];
@@ -239,7 +244,7 @@
         const isHigh = point.y > band.upper;
         if (isHigh) recentHighs.push(point);
         if (recentHighs.length >= 3 && isHigh && outsideStreak.length < 5) {
-          highWarnings.data.push(point);
+          highWarnings?.data.push(point);
           if (!repeatedHighs && (warning.hidden || warning.dataset.level !== "attention")) {
             warning.dataset.level = "warning";
             warningMessage.textContent = `Warning at cycle ${point.x}. T24 exceeded the fleet range three times in ten cycles.`;
@@ -248,7 +253,7 @@
         }
         repeatedHighs = recentHighs.length >= 3;
 
-        if (point.x === finalCycle) failure.data.push(point);
+        if (point.x === finalCycle) failure?.data.push(point);
       }
 
       const timer = setInterval(async () => {
@@ -263,10 +268,10 @@
           const result = await response.json();
           const readings = live ? result.readings : [result];
           for (const reading of readings) {
-            plotReading(reading);
+            updateReading(reading);
             nextCycle = reading.cycle + 1;
           }
-          if (readings.length) chart.update();
+          if (readings.length) chart?.update();
           if (live ? result.done : nextCycle > finalCycle) {
             clearInterval(timer);
             status.textContent = `Simulation complete · Failure endpoint at cycle ${finalCycle}.`;

@@ -9,26 +9,67 @@ const script = template.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
 
 function enginePanel(unit, finalCycle, live) {
   const cycle = { dataset: { reading: "cycle" }, textContent: "—" };
+  const temperature = { dataset: { reading: "s_2" }, textContent: "—" };
   const status = { textContent: "Waiting" };
+  const chartArea = { hidden: false };
+  const chartNotice = { hidden: true };
+  const warning = { dataset: {}, hidden: true };
+  const warningMessage = { textContent: "" };
   const elements = {
     "[data-status]": status,
+    "[data-chart-notice]": chartNotice,
     canvas: {
+      parentElement: chartArea,
       dataset: {
         unit: String(unit), finalCycle: String(finalCycle), live: live ? "1" : "0",
         bandLower: "640", bandUpper: "645",
       },
     },
-    "[data-warning]": { dataset: {}, hidden: true },
-    "[data-warning-message]": {},
+    "[data-warning]": warning,
+    "[data-warning-message]": warningMessage,
     "[data-acknowledge]": { addEventListener() {} },
   };
   return {
     cycle,
+    temperature,
     status,
+    chartArea,
+    chartNotice,
+    warning,
+    warningMessage,
     querySelector: selector => elements[selector],
-    querySelectorAll: () => [cycle],
+    querySelectorAll: () => [cycle, temperature],
   };
 }
+
+test("live readings and warnings update without Chart.js", async () => {
+  const panel = enginePanel(1, 10, true);
+  let tick;
+  runInNewContext(script, {
+    window: { addEventListener: (_, start) => start() },
+    document: { getElementById: () => null, querySelectorAll: () => [panel] },
+    setInterval(callback) { tick = callback; },
+    async fetch(url) {
+      assert.equal(url, "/api/engine/1/live?after=0");
+      return {
+        ok: true,
+        json: async () => ({
+          readings: [1, 2, 3, 4, 5].map(cycle => ({ cycle, s_2: 646 })),
+          done: false,
+        }),
+      };
+    },
+  });
+
+  assert.equal(panel.chartArea.hidden, true);
+  assert.equal(panel.chartNotice.hidden, false);
+  await tick();
+  assert.equal(panel.cycle.textContent, 5);
+  assert.equal(panel.temperature.textContent, 646);
+  assert.equal(panel.status.textContent, "Receiving simulated live readings");
+  assert.equal(panel.warning.hidden, false);
+  assert.match(panel.warningMessage.textContent, /Warning triggered at cycle 5/);
+});
 
 for (const mode of ["replay", "live"]) {
   test(`${mode} charts poll, retry, and complete independently`, async () => {

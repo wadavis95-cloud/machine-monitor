@@ -12,3 +12,7 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Lock | The bathroom door lock: one at a time | "A lock makes check-then-write happen as one step, so the clock starts exactly once." |
 | Removing dead code | Don't repair a room nobody uses; remove it | "I confirmed only tests called `/next`, removed it to cut maintenance and a known bug, and verified with tests in an isolated commit." |
 | 404 vs 400 | 404 = "that doesn't exist"; 400 = "your request is malformed" | "404 for an unknown engine, 400 for a garbage cursor like `after=banana`." |
+| Graceful degradation | If the station display breaks, the announcement still tells you when the train arrives. | "If Chart.js fails to load, the dashboard shows a notice and keeps updating readings and warnings." |
+| Optional chaining (`?.`) | Update the whiteboard if there is one, then keep going. | "I used `chart?.update()` to redraw only when the chart exists." |
+| Port | An apartment number in your computer's "building" (`127.0.0.1`); one server per apartment | "A port identifies which program on a machine receives traffic. Two servers can't listen on the same port." |
+| Restart after code changes | A server reads your code once at startup, like printing a page; editing the file doesn't change the printout | "A running server keeps the code it started with, so after a change you restart it, or use a dev/reload mode." |
