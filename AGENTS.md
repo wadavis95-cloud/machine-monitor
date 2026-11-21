@@ -1,5 +1,7 @@
 # Working with Claude (collab mailbox)
 
+**Project purpose: interview prep and learning.** The user must be able to explain every layer of this project. Prefer small, readable changes over clever or sweeping ones. Don't add abstractions, dependencies, or features the task didn't ask for. When working with the user directly, explain what you're doing and why as you go.
+
 The user runs Codex and Claude in separate terminals. Claude plans and reviews. Codex implements. Claude has a small token budget, so keep everything you send it short.
 
 ## Mailbox (`.collab/`, gitignored)
@@ -23,6 +25,8 @@ Claude usually runs you with `codex exec` through a runner script. Your final me
 <paths only>
 ## Tests
 <exact summary line(s), e.g. "31 passed" / "pass 2 fail 0">
+## Concepts
+<1-3 bullets: the key concept or technique behind the change, and why you chose it over the alternatives (the user is learning)>
 ## Open issues / questions
 <or "none">
 ```
@@ -30,3 +34,11 @@ Claude usually runs you with `codex exec` through a runner script. Your final me
 5. Tell the user: "Reply written. Tell Claude to check inbox."
 
 Don't paste file contents or full diffs into the reply. Claude reads `git diff` itself. Don't commit unless the message asks you to.
+
+## Handoff back to Claude
+The user works with you directly between brainstorming sessions with Claude. When the user says "handoff to claude", or a work session is wrapping up, overwrite `.collab/handoff.md` with up to 200 words:
+- What changed since the last handoff (features, files, commits)
+- Decisions made, and why
+- Open problems, ideas, and questions for brainstorming
+- Current test status (exact summary lines)
+Claude reads only this file and `git log --oneline` to catch up, so keep it accurate and short.

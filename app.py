@@ -5,7 +5,6 @@ from time import monotonic
 from flask import Flask, abort, jsonify, render_template, request
 
 from loader import load_data
-from replayer import EngineReplayer
 
 
 def create_app():
@@ -15,7 +14,6 @@ def create_app():
     early_readings = data.loc[data["cycle"].between(1, 30)]
     readings_by_cycle = data.set_index(["unit", "cycle"], drop=False)
     live_started_at = {}
-    replayers = {}
     playback_lock = Lock()
 
     def render_dashboard(selected, multi=False):
@@ -54,15 +52,6 @@ def create_app():
     @app.get("/engines")
     def multi_engine_dashboard():
         return render_dashboard(request.args.getlist("unit") or [1, 2, 3, 4], multi=True)
-
-    @app.get("/api/engine/<int:unit>/next")
-    def next_reading(unit):
-        with playback_lock:
-            if unit not in replayers:
-                replayers[unit] = EngineReplayer(data, unit)
-            row = replayers[unit].next()
-
-        return jsonify(row if row is not None else {"done": True})
 
     @app.get("/api/engine/<int:unit>/cycle/<int:cycle>")
     def cycle_reading(unit, cycle):
