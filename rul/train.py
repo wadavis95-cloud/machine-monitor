@@ -4,6 +4,7 @@ import argparse
 from datetime import date
 from pathlib import Path
 from platform import python_version
+from subprocess import check_output
 from tempfile import mkdtemp
 
 import joblib
@@ -75,10 +76,28 @@ def write_scores(report: Path, val_scores, test_scores) -> None:
             )
 
 
+def write_predictions(df: pd.DataFrame, preds: dict[str, np.ndarray], path: Path) -> None:
+    """Write whole-cycle predictions with a comment identifying the model run."""
+    exported = df[["unit", "cycle", "split", "rul_true"]].copy()
+    for name in ("linear", "trees", "lstm"):
+        prediction = preds[name]
+        if not np.isfinite(prediction).all():
+            raise ValueError(f"Nonfinite predictions from {name}.")
+        # Keep estimates in range and round exact halves to the nearest even number.
+        exported[f"rul_{name}"] = np.rint(np.clip(prediction, 0, RUL_CAP)).astype(int)
+
+    commit = check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Readers skip this metadata line with pd.read_csv(path, comment="#").
+    with path.open("w", encoding="utf-8", newline="") as output:
+        output.write(f"# model_commit={commit} run_date={date.today().isoformat()}\n")
+        exported.to_csv(output, index=False)
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--quick", action="store_true", help="Run a small validation-only smoke check.")
-    parser.add_argument("--out", type=Path, help="Root directory for the report and model bundle.")
+    parser.add_argument("--out", type=Path, help="Root directory for the report, model bundle, and CSV.")
     args = parser.parse_args(argv)
 
     out = args.out
@@ -138,6 +157,12 @@ def main(argv=None) -> None:
     test_scores = {} if args.quick else score_on_test(models, scaler, data_dir)
     write_scores(report, val_scores, test_scores)
     print(f"Report written to {report}")
+
+    replay = rows.loc[rows["unit"].isin(units)].copy()
+    replay["split"] = np.where(replay["unit"].isin(train_units), "train", "val")
+    replay = apply_scaler(replay, scaler)
+    predictions = {name: model.predict(replay) for name, model in models.items()}
+    write_predictions(replay, predictions, out / "data" / "predictions_FD001.csv")
 
 
 if __name__ == "__main__":
