@@ -49,3 +49,4 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Ubiquitous language / glossary | Use the same words on a map, its signs, and the directions you give. | "I use one agreed term per idea so the docs, code discussions, and UI describe the same thing." |
 | Make target | Press a button that starts a saved sequence on an appliance. | "I put linting, formatting checks, and tests behind `make check` so contributors can run them in the same order." |
 | Continuous integration | Use the same inspection checklist for each new batch from a factory. | "GitHub Actions runs `make check` in a clean environment on pushes and pull requests to catch problems early." |
+| Git branch and pull request | Edit a copy of a shared recipe, then ask someone to review your changes before updating the original. | "I made my changes on a branch and used a pull request to ask for review before merging into main." |
