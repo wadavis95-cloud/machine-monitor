@@ -1,4 +1,5 @@
 # Machine Monitor
+[![CI](https://github.com/wadavis95-cloud/machine-monitor/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wadavis95-cloud/machine-monitor/actions/workflows/ci.yml)
 
 Machine Monitor replays NASA C-MAPSS jet engine sensor readings in a browser dashboard. You can inspect one engine or compare several engines as their readings change cycle by cycle. The dashboard also displays saved estimates of remaining useful life (RUL), the number of cycles an engine is expected to run before failure.
 
