@@ -67,7 +67,10 @@ def test_multi_engine_view_preserves_selected_engines_and_mode(client):
 
 @pytest.mark.parametrize("unit", ["999", "invalid"])
 def test_multi_engine_view_rejects_invalid_engine(client, unit):
-    assert client.get("/engines", query_string=[("unit", "1"), ("unit", unit)]).status_code == 404
+    assert (
+        client.get("/engines", query_string=[("unit", "1"), ("unit", unit)]).status_code
+        == 404
+    )
 
 
 def test_cycle_lookup_can_restart_without_advancing_another_client(client):
@@ -131,7 +134,9 @@ def test_live_feed_serves_concurrent_viewers_without_advancing(client, monkeypat
         def poll(after):
             with client.application.test_client() as viewer:
                 barrier.wait(timeout=10)
-                response = viewer.get("/api/engine/1/live", query_string={"after": after})
+                response = viewer.get(
+                    "/api/engine/1/live", query_string={"after": after}
+                )
                 assert response.status_code == 200
                 assert response.cache_control.no_store
                 payload = response.get_json()
@@ -216,7 +221,7 @@ def test_live_without_predictions_file(tmp_path):
     assert response.status_code == 200
     assert response.cache_control.no_store
     assert body["done"] is False
-    reading, = body["readings"]
+    (reading,) = body["readings"]
     assert (reading["unit"], reading["cycle"]) == (1, 1)
     assert "s_2" in reading
     assert "rul_pred" not in reading and "split" not in reading
@@ -232,7 +237,9 @@ def test_live_missing_row_omits_rul(predictions_path, monkeypatch):
     response = client.get("/api/engine/1/live?after=2")
     readings = response.get_json()["readings"]
     assert [reading["cycle"] for reading in readings] == [3, 4, 5, 6]
-    assert all("rul_pred" not in reading and "split" not in reading for reading in readings)
+    assert all(
+        "rul_pred" not in reading and "split" not in reading for reading in readings
+    )
 
 
 def test_duplicate_prediction_rows_raise(tmp_path):

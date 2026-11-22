@@ -14,18 +14,29 @@ import sklearn
 import torch
 
 from rul.data import (
-    N_VAL, RUL_CAP, SEED, WINDOW, add_rul_labels, apply_scaler, fit_scaler,
-    load_test, load_train, select_features, split_engines, validation_cutoffs,
+    N_VAL,
+    RUL_CAP,
+    SEED,
+    WINDOW,
+    add_rul_labels,
+    apply_scaler,
+    fit_scaler,
+    load_test,
+    load_train,
+    select_features,
+    split_engines,
+    validation_cutoffs,
 )
 from rul.evaluate import nasa_score, rmse
-from rul.models import LinearRUL, LSTMRUL, TreesRUL
-
+from rul.models import LSTMRUL, LinearRUL, TreesRUL
 
 ROOT = Path(__file__).resolve().parents[1]
 SHIP_DECISION = "Shipped model (decided on validation, 2026-11-21): gradient boosting"
 
 
-def score_on_test(models, scaler, data_dir: Path) -> dict[str, tuple[float, float, float]]:
+def score_on_test(
+    models, scaler, data_dir: Path
+) -> dict[str, tuple[float, float, float]]:
     """Score one prediction per engine, at its last observed test cycle."""
     rows, truth = load_test(data_dir / "test_FD001.txt", data_dir / "RUL_FD001.txt")
     rows = apply_scaler(rows.reset_index(drop=True), scaler)
@@ -38,7 +49,11 @@ def score_on_test(models, scaler, data_dir: Path) -> dict[str, tuple[float, floa
     for name, model in models.items():
         # Predict from the full histories so the final windows keep earlier cycles.
         predictions = model.predict(rows)[last_rows.to_numpy()]
-        scores[name] = rmse(capped, predictions), rmse(truth, predictions), nasa_score(truth, predictions)
+        scores[name] = (
+            rmse(capped, predictions),
+            rmse(truth, predictions),
+            nasa_score(truth, predictions),
+        )
     return scores
 
 
@@ -76,7 +91,9 @@ def write_scores(report: Path, val_scores, test_scores) -> None:
             )
 
 
-def write_predictions(df: pd.DataFrame, preds: dict[str, np.ndarray], path: Path) -> None:
+def write_predictions(
+    df: pd.DataFrame, preds: dict[str, np.ndarray], path: Path
+) -> None:
     """Write whole-cycle predictions with a comment identifying the model run."""
     exported = df[["unit", "cycle", "split", "rul_true"]].copy()
     for name in ("linear", "trees", "lstm"):
@@ -96,15 +113,21 @@ def write_predictions(df: pd.DataFrame, preds: dict[str, np.ndarray], path: Path
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--quick", action="store_true", help="Run a small validation-only smoke check.")
-    parser.add_argument("--out", type=Path, help="Root directory for the report, model bundle, and CSV.")
+    parser.add_argument(
+        "--quick", action="store_true", help="Run a small validation-only smoke check."
+    )
+    parser.add_argument(
+        "--out", type=Path, help="Root directory for the report, model bundle, and CSV."
+    )
     args = parser.parse_args(argv)
 
     out = args.out
     if out is None:
         out = Path(mkdtemp(prefix="rul-quick-")) if args.quick else ROOT
     data_dir = ROOT / "data"
-    torch.set_num_threads(2)  # Match the CPU configuration used in the validation experiments.
+    torch.set_num_threads(
+        2
+    )  # Match the CPU configuration used in the validation experiments.
 
     rows = add_rul_labels(load_train(data_dir / "train_FD001.txt"))
     units = sorted(rows["unit"].unique())
@@ -138,11 +161,16 @@ def main(argv=None) -> None:
     # Save the fitted models and preprocessing before opening the official holdout.
     model_dir = out / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"models": models, "features": features, "scaler": scaler}, model_dir / "rul.joblib")
+    joblib.dump(
+        {"models": models, "features": features, "scaler": scaler},
+        model_dir / "rul.joblib",
+    )
 
     report = out / "reports" / "rul_results.md"
     report.parent.mkdir(parents=True, exist_ok=True)
-    mode = "Quick validation-only smoke run." if args.quick else "Frozen FD001 evaluation."
+    mode = (
+        "Quick validation-only smoke run." if args.quick else "Frozen FD001 evaluation."
+    )
     report.write_text(
         f"# FD001 remaining useful life results\n\n{SHIP_DECISION}\n\n"
         f"{mode} Run date {date.today().isoformat()}.\n\n"

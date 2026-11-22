@@ -32,11 +32,17 @@ def test_train_quick_writes_report(tmp_path, quick_rows):
 
 
 def test_predictions_clipped_and_rounded(tmp_path):
-    rows = pd.DataFrame({
-        "unit": [1, 1, 2], "cycle": [1, 2, 1], "split": ["train", "train", "val"],
-        "rul_true": [1, 0, 0],
-    })
-    predictions = {name: np.array([-3.2, 130.7, 42.5]) for name in ("linear", "trees", "lstm")}
+    rows = pd.DataFrame(
+        {
+            "unit": [1, 1, 2],
+            "cycle": [1, 2, 1],
+            "split": ["train", "train", "val"],
+            "rul_true": [1, 0, 0],
+        }
+    )
+    predictions = {
+        name: np.array([-3.2, 130.7, 42.5]) for name in ("linear", "trees", "lstm")
+    }
     path = tmp_path / "predictions.csv"
     train.write_predictions(rows, predictions, path)
 
@@ -53,9 +59,20 @@ def test_predictions_cover_every_row(tmp_path, quick_rows):
     path = tmp_path / "data" / "predictions_FD001.csv"
     exported = pd.read_csv(path, comment="#")
     assert list(exported.columns) == [
-        "unit", "cycle", "split", "rul_true", "rul_linear", "rul_trees", "rul_lstm",
+        "unit",
+        "cycle",
+        "split",
+        "rul_true",
+        "rul_linear",
+        "rul_trees",
+        "rul_lstm",
     ]
     assert len(exported) == len(quick_rows)
     assert not exported.duplicated(["unit", "cycle"]).any()
-    pd.testing.assert_frame_equal(exported[["unit", "cycle"]], quick_rows[["unit", "cycle"]])
-    assert exported.groupby("split")["unit"].nunique().to_dict() == {"train": 4, "val": 2}
+    pd.testing.assert_frame_equal(
+        exported[["unit", "cycle"]], quick_rows[["unit", "cycle"]]
+    )
+    assert exported.groupby("split")["unit"].nunique().to_dict() == {
+        "train": 4,
+        "val": 2,
+    }

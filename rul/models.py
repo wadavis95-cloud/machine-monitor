@@ -19,10 +19,12 @@ def _window_features(df: pd.DataFrame, features: list[str]) -> np.ndarray:
 
     # Slope is the change in a reading per cycle along its best-fit line.
     centered_cycles = cycles - cycles.mean(axis=1, keepdims=True)
-    cycle_spread = (centered_cycles ** 2).sum(axis=1, keepdims=True)
+    cycle_spread = (centered_cycles**2).sum(axis=1, keepdims=True)
     trend = (readings * centered_cycles[:, :, None]).sum(axis=1)
     # A window with only one observed cycle has no trend yet.
-    slopes = np.divide(trend, cycle_spread, out=np.zeros_like(trend), where=cycle_spread > 0)
+    slopes = np.divide(
+        trend, cycle_spread, out=np.zeros_like(trend), where=cycle_spread > 0
+    )
     return np.concatenate((means, slopes), axis=1)
 
 
@@ -48,7 +50,9 @@ class TreesRUL:
     """
 
     def __init__(self):
-        self._model = GradientBoostingRegressor(n_estimators=100, max_depth=5, random_state=SEED)
+        self._model = GradientBoostingRegressor(
+            n_estimators=100, max_depth=5, random_state=SEED
+        )
 
     def fit(self, train_df: pd.DataFrame, features: list[str]) -> None:
         self._model.fit(_window_features(train_df, features), train_df["rul_true"])
@@ -79,7 +83,10 @@ class LSTMRUL:
         self.lr = lr
 
     def fit(
-        self, train_df: pd.DataFrame, features: list[str], val_df: pd.DataFrame | None = None
+        self,
+        train_df: pd.DataFrame,
+        features: list[str],
+        val_df: pd.DataFrame | None = None,
     ) -> None:
         """Train on scaled readings, with optional full validation histories."""
         torch.manual_seed(SEED)
@@ -124,7 +131,9 @@ class LSTMRUL:
                 self._model.eval()
                 windows, targets = validation
                 with torch.no_grad():
-                    cutoff_rmse = mse(self._model(windows), targets).sqrt().item() * RUL_CAP
+                    cutoff_rmse = (
+                        mse(self._model(windows), targets).sqrt().item() * RUL_CAP
+                    )
                 if cutoff_rmse < best_rmse:
                     best_rmse = cutoff_rmse
                     best_weights = deepcopy(self._model.state_dict())

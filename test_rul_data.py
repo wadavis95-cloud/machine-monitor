@@ -17,7 +17,6 @@ from rul.data import (
     validation_cutoffs,
 )
 
-
 DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -124,4 +123,6 @@ def test_cutoffs_exclude_final_cycle(engine_split):
 
     assert cutoffs.columns.equals(val.columns)
     assert (cutoffs["rul_uncapped"] >= 1).all()
-    assert cutoffs.groupby("unit").size().to_dict() == dict.fromkeys(val["unit"].unique(), 5)
+    assert cutoffs.groupby("unit").size().to_dict() == dict.fromkeys(
+        val["unit"].unique(), 5
+    )

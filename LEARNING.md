@@ -47,3 +47,5 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Showing model context in the UI | Mark worksheet answers as practice or unseen questions so readers know what was familiar. | "I showed each estimate with a training or validation badge, and cleared it when the latest reading had no prediction." |
 | Architecture decision record (ADR) | Leave a note explaining why you chose one route at a fork in the road. | "I write down the context, choice, and reason so someone can understand the tradeoff later." |
 | Ubiquitous language / glossary | Use the same words on a map, its signs, and the directions you give. | "I use one agreed term per idea so the docs, code discussions, and UI describe the same thing." |
+| Make target | Press a button that starts a saved sequence on an appliance. | "I put linting, formatting checks, and tests behind `make check` so contributors can run them in the same order." |
+| Continuous integration | Use the same inspection checklist for each new batch from a factory. | "GitHub Actions runs `make check` in a clean environment on pushes and pull requests to catch problems early." |

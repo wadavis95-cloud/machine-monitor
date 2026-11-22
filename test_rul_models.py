@@ -3,7 +3,13 @@ from time import perf_counter
 
 import numpy as np
 
-from rul.data import add_rul_labels, apply_scaler, fit_scaler, load_train, select_features
+from rul.data import (
+    add_rul_labels,
+    apply_scaler,
+    fit_scaler,
+    load_train,
+    select_features,
+)
 from rul.models import LSTMRUL, LinearRUL, TreesRUL
 
 

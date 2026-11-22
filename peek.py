@@ -1,7 +1,9 @@
 # Import Path to find the dataset relative to this script.
 from pathlib import Path
+
 # Import the C-MAPSS data loader.
 from loader import load_data
+
 # Load the FD001 training data.
 data = load_data(Path(__file__).parent / "data" / "train_FD001.txt")
 # Print the first five rows with every column visible.

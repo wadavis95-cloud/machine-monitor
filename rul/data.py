@@ -5,7 +5,6 @@ import pandas as pd
 
 from loader import load_data
 
-
 RUL_CAP = 125
 WINDOW = 30
 SEED = 42
@@ -49,7 +48,9 @@ def split_engines(
     """Keep each engine's entire history in one group."""
     unique_units = sorted(set(units))
     if not 0 <= n_val <= len(unique_units):
-        raise ValueError("Validation engine count must fit the number of unique engines.")
+        raise ValueError(
+            "Validation engine count must fit the number of unique engines."
+        )
     shuffled = np.random.default_rng(seed).permutation(unique_units).tolist()
     return sorted(shuffled[n_val:]), sorted(shuffled[:n_val])
 
@@ -61,7 +62,9 @@ def select_features(train_df: pd.DataFrame) -> list[str]:
     return spread[spread > 1e-4].index.tolist()
 
 
-def fit_scaler(train_df: pd.DataFrame, features: list[str]) -> dict[str, tuple[float, float]]:
+def fit_scaler(
+    train_df: pd.DataFrame, features: list[str]
+) -> dict[str, tuple[float, float]]:
     """Record each feature's lowest and highest values on training engines."""
     return {
         feature: (float(train_df[feature].min()), float(train_df[feature].max()))
@@ -79,7 +82,9 @@ def apply_scaler(df: pd.DataFrame, scaler: dict) -> pd.DataFrame:
     return scaled
 
 
-def make_windows(df: pd.DataFrame, features: list[str], window: int = WINDOW) -> np.ndarray:
+def make_windows(
+    df: pd.DataFrame, features: list[str], window: int = WINDOW
+) -> np.ndarray:
     """Build one window per input row, ending at that row's cycle."""
     if window < 1:
         raise ValueError("Window size must be at least one cycle.")
@@ -102,7 +107,9 @@ def make_windows(df: pd.DataFrame, features: list[str], window: int = WINDOW) ->
     return windows
 
 
-def validation_cutoffs(val_df: pd.DataFrame, per_engine: int = 5, seed: int = SEED) -> pd.DataFrame:
+def validation_cutoffs(
+    val_df: pd.DataFrame, per_engine: int = 5, seed: int = SEED
+) -> pd.DataFrame:
     """Sample distinct pre-failure cycles from each validation engine."""
     if val_df.empty:
         return val_df.copy()

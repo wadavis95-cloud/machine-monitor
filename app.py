@@ -7,7 +7,6 @@ from flask import Flask, abort, jsonify, render_template, request
 
 from loader import load_data
 
-
 DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -16,7 +15,9 @@ def _load_predictions(path: Path | None):
     if path is None:
         return {}
     try:
-        rows = pd.read_csv(path, comment="#", usecols=["unit", "cycle", "split", "rul_trees"])
+        rows = pd.read_csv(
+            path, comment="#", usecols=["unit", "cycle", "split", "rul_trees"]
+        )
     except FileNotFoundError:
         return {}
     if rows.duplicated(["unit", "cycle"]).any():
@@ -28,7 +29,10 @@ def _load_predictions(path: Path | None):
     for row in rows.loc[rows["split"].isin(["train", "val"])].itertuples(index=False):
         estimate = row.rul_trees
         if pd.notna(estimate) and float(estimate).is_integer():
-            predictions[row.unit, row.cycle] = {"rul_pred": int(estimate), "split": row.split}
+            predictions[row.unit, row.cycle] = {
+                "rul_pred": int(estimate),
+                "split": row.split,
+            }
     return predictions
 
 
@@ -54,12 +58,14 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
         for unit in selected:
             reference = early_readings.loc[early_readings["unit"] != unit, "s_2"]
             lower, upper = reference.quantile([0.05, 0.95])
-            panels.append({
-                "unit": unit,
-                "final_cycle": int(final_cycles.loc[unit]),
-                "band_lower": float(lower),
-                "band_upper": float(upper),
-            })
+            panels.append(
+                {
+                    "unit": unit,
+                    "final_cycle": int(final_cycles.loc[unit]),
+                    "band_lower": float(lower),
+                    "band_upper": float(upper),
+                }
+            )
 
         return render_template(
             "index.html",
@@ -77,7 +83,9 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
 
     @app.get("/engines")
     def multi_engine_dashboard():
-        return render_dashboard(request.args.getlist("unit") or [1, 2, 3, 4], multi=True)
+        return render_dashboard(
+            request.args.getlist("unit") or [1, 2, 3, 4], multi=True
+        )
 
     @app.get("/api/engine/<int:unit>/cycle/<int:cycle>")
     def cycle_reading(unit, cycle):
@@ -105,7 +113,7 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
             started_at = live_started_at.setdefault(unit, now)
         final_cycle = int(final_cycles.loc[unit])
         available_cycle = min(final_cycle, int((now - started_at) * 2) + 1)
-        rows = readings_by_cycle.loc[unit].loc[after + 1:available_cycle]
+        rows = readings_by_cycle.loc[unit].loc[after + 1 : available_cycle]
         readings = rows.to_dict("records")
         for reading in readings:
             reading.update(predictions.get((unit, reading["cycle"]), {}))

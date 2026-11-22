@@ -4,7 +4,7 @@ import numpy as np
 def rmse(y_true, y_pred) -> float:
     """Measure prediction error in cycles, giving larger errors more weight."""
     error = np.asarray(y_pred, dtype=float) - np.asarray(y_true, dtype=float)
-    return float(np.sqrt(np.mean(error ** 2)))
+    return float(np.sqrt(np.mean(error**2)))
 
 
 def nasa_score(y_true, y_pred) -> float:
