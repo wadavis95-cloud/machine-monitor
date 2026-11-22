@@ -1,6 +1,9 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main] # re-check main after each merge
+  pull_request: # check every PR before it merges
 
 permissions:
   contents: read
