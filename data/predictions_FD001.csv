@@ -1,4 +1,4 @@
-# model_commit=ebb4bf35c4fc5a0dc07b03994fdd1c4ebdf31dc5 run_date=2026-11-21
+# model_commit=017b5d42600efd7e36cd411a60ac948e8bd921d6 run_date=2026-11-21
 unit,cycle,split,rul_true,rul_linear,rul_trees,rul_lstm
 1,1,train,125,122,124,125
 1,2,train,125,120,114,124
