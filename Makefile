@@ -1,6 +1,6 @@
 PYTHON := .venv/bin/python
 
-.PHONY: setup run check bench
+.PHONY: setup run check bench seed
 
 setup:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -16,3 +16,6 @@ check:
 
 bench:
 	$(PYTHON) -m scripts.bench
+
+seed:
+	$(PYTHON) -m assistant.seed
