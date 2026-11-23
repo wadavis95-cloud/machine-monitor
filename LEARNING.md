@@ -66,3 +66,7 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Sort tie-breaker | If two repair jobs have the same deadline, put the one with the more serious warning first. | "I gave three engines the same RUL so the test could check that red ranks before yellow and yellow before none." |
 | Snapshot cutoff | Stop each engine's recorded video at its own bookmark before reviewing what happened. | "I looked up the current cycle for each engine and dropped later readings before calculating warning bands." |
 | JSON-safe values | Put readings into a form with standard boxes that the receiver knows how to open. | "I returned regular Python numbers and dictionaries so the model can read the tool results as JSON." |
+| Independent test setup | Place a practice ticket in the approval tray before testing what happens when someone signs it. | "I inserted draft rows directly so the route tests could check approval independently of how the assistant creates drafts." |
+| HTTP 409 Conflict | A clerk checks a ticket and sees that someone already signed it. | "I tested that approving a draft twice returns 409 and leaves the saved row unchanged." |
+| Conditional SQL update | A clerk can stamp a ticket only while it says “awaiting review.” | "I put the draft status check in the UPDATE so two requests can't both decide the same draft." |
+| Flask blueprint | Keep all the draft service counters together in one department. | "I grouped draft routes in a blueprint and registered it with the Flask app." |

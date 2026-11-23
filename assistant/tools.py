@@ -2,6 +2,7 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 
@@ -11,6 +12,8 @@ from loader import load_data
 
 ORDER_BUFFER_DAYS = 10
 FLAG_RANK = {"red": 0, "yellow": 1, "none": 2}
+MAX_DRAFTS = 3
+DRAFT_LIMIT_MESSAGE = "Draft limit reached (3 per question)."
 
 
 @dataclass
@@ -154,3 +157,50 @@ def work_orders(
             query += " AND status = ?"
             params = (unit, status)
         return [dict(row) for row in conn.execute(query + " ORDER BY wo_id", params)]
+
+
+def draft_work_order(ctx: FleetContext, unit: int, summary: str, reason: str) -> dict:
+    """Save a work order draft for a person to review."""
+    if len(ctx.drafts_made) >= MAX_DRAFTS:
+        return {"error": DRAFT_LIMIT_MESSAGE}
+
+    draft_id = f"WO-{uuid4().hex}"
+    with closing(connect(ctx.db_path)) as conn, conn:
+        if _machine(conn, unit) is None:
+            return _unknown_engine(unit)
+        conn.execute(
+            """
+            INSERT INTO work_orders (wo_id, unit, type, action, comments, status)
+            VALUES (?, ?, 'corrective', ?, ?, 'draft')
+            """,
+            (draft_id, unit, summary, reason),
+        )
+
+    ctx.drafts_made.append(draft_id)
+    return {"draft_id": draft_id}
+
+
+def draft_part_request(ctx: FleetContext, part_id: str, qty: int, reason: str) -> dict:
+    """Save a part request draft for a person to review."""
+    if len(ctx.drafts_made) >= MAX_DRAFTS:
+        return {"error": DRAFT_LIMIT_MESSAGE}
+    if qty < 1:
+        return {"error": "Quantity must be at least 1."}
+
+    draft_id = f"PR-{uuid4().hex}"
+    with closing(connect(ctx.db_path)) as conn, conn:
+        part = conn.execute(
+            "SELECT 1 FROM parts WHERE part_id = ?", (part_id,)
+        ).fetchone()
+        if part is None:
+            return {"error": f"Unknown part {part_id}."}
+        conn.execute(
+            """
+            INSERT INTO part_requests (pr_id, part_id, qty, reason, status, created_by)
+            VALUES (?, ?, ?, ?, 'draft', 'assistant')
+            """,
+            (draft_id, part_id, qty, reason),
+        )
+
+    ctx.drafts_made.append(draft_id)
+    return {"draft_id": draft_id}
