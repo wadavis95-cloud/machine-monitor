@@ -4,9 +4,9 @@ from threading import Lock
 from time import monotonic, perf_counter
 from urllib.parse import quote
 
-import pandas as pd
 from flask import Flask, abort, g, jsonify, render_template, request
 
+from assistant.eam import load_predictions
 from assistant.flags import t24_band
 from loader import load_data
 
@@ -14,37 +14,11 @@ DATA_DIR = Path(__file__).parent / "data"
 logger = logging.getLogger(__name__)
 
 
-def _load_predictions(path: Path | None):
-    """Read saved estimates into a lookup by engine and cycle."""
-    if path is None:
-        return {}
-    try:
-        rows = pd.read_csv(
-            path, comment="#", usecols=["unit", "cycle", "split", "rul_trees"]
-        )
-    except FileNotFoundError, pd.errors.EmptyDataError:
-        return {}
-    if rows.duplicated(["unit", "cycle"]).any():
-        raise ValueError("Duplicate prediction rows for the same unit and cycle.")
-
-    # Unreadable values become missing. The export contains whole-cycle estimates.
-    rows["rul_trees"] = pd.to_numeric(rows["rul_trees"], errors="coerce")
-    predictions = {}
-    for row in rows.loc[rows["split"].isin(["train", "val"])].itertuples(index=False):
-        estimate = row.rul_trees
-        if pd.notna(estimate) and float(estimate).is_integer():
-            predictions[row.unit, row.cycle] = {
-                "rul_pred": int(estimate),
-                "split": row.split,
-            }
-    return predictions
-
-
 def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv"):
     app = Flask(__name__, static_folder=None)
     app.logger.setLevel(logging.INFO)
     data = load_data(DATA_DIR / "train_FD001.txt")
-    predictions = _load_predictions(predictions_path)
+    predictions = load_predictions(predictions_path)
     final_cycles = data.groupby("unit")["cycle"].max()
     readings_by_cycle = data.set_index(["unit", "cycle"], drop=False)
     live_started_at = {}
