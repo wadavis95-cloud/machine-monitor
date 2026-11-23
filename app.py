@@ -1,13 +1,16 @@
+import logging
 from pathlib import Path
 from threading import Lock
-from time import monotonic
+from time import monotonic, perf_counter
+from urllib.parse import quote
 
 import pandas as pd
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, g, jsonify, render_template, request
 
 from loader import load_data
 
 DATA_DIR = Path(__file__).parent / "data"
+logger = logging.getLogger(__name__)
 
 
 def _load_predictions(path: Path | None):
@@ -18,7 +21,7 @@ def _load_predictions(path: Path | None):
         rows = pd.read_csv(
             path, comment="#", usecols=["unit", "cycle", "split", "rul_trees"]
         )
-    except FileNotFoundError:
+    except FileNotFoundError, pd.errors.EmptyDataError:
         return {}
     if rows.duplicated(["unit", "cycle"]).any():
         raise ValueError("Duplicate prediction rows for the same unit and cycle.")
@@ -38,6 +41,7 @@ def _load_predictions(path: Path | None):
 
 def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv"):
     app = Flask(__name__, static_folder=None)
+    app.logger.setLevel(logging.INFO)
     data = load_data(DATA_DIR / "train_FD001.txt")
     predictions = _load_predictions(predictions_path)
     final_cycles = data.groupby("unit")["cycle"].max()
@@ -45,6 +49,24 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
     readings_by_cycle = data.set_index(["unit", "cycle"], drop=False)
     live_started_at = {}
     playback_lock = Lock()
+
+    @app.before_request
+    def start_request_timer():
+        g.request_started_at = perf_counter()
+
+    @app.after_request
+    def log_request(response):
+        if request.endpoint != "static":
+            logger.info(
+                "method=%s path=%s endpoint=%s unit=%s status=%s duration_ms=%.1f",
+                request.method,
+                quote(request.path),
+                request.endpoint or "",
+                (request.view_args or {}).get("unit", ""),
+                response.status_code,
+                (perf_counter() - g.request_started_at) * 1000,
+            )
+        return response
 
     def render_dashboard(selected, multi=False):
         try:
@@ -85,6 +107,14 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
     def multi_engine_dashboard():
         return render_dashboard(
             request.args.getlist("unit") or [1, 2, 3, 4], multi=True
+        )
+
+    @app.get("/health")
+    def health():
+        return jsonify(
+            status="ok" if predictions else "degraded",
+            engines=len(final_cycles),
+            predictions_loaded=bool(predictions),
         )
 
     @app.get("/api/engine/<int:unit>/cycle/<int:cycle>")

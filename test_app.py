@@ -1,3 +1,5 @@
+import logging
+import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
@@ -190,6 +192,71 @@ def predictions_path(tmp_path):
         "2,287,val,13,0,22\n"
     )
     return path
+
+
+def test_health_reports_loaded_predictions(predictions_path):
+    client = create_app(predictions_path=predictions_path).test_client()
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "status": "ok",
+        "engines": 100,
+        "predictions_loaded": True,
+    }
+
+
+@pytest.mark.parametrize("contents", [None, ""], ids=["missing", "empty"])
+def test_health_reports_degraded_without_predictions(tmp_path, contents):
+    path = tmp_path / "predictions.csv"
+    if contents is not None:
+        path.write_text(contents)
+    client = create_app(predictions_path=path).test_client()
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "status": "degraded",
+        "engines": 100,
+        "predictions_loaded": False,
+    }
+
+
+def test_request_log_includes_route_fields_without_query(client, caplog):
+    response = client.get("/api/engine/1/cycle/1?private=hidden")
+
+    assert response.status_code == 200
+    (line,) = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert re.fullmatch(
+        r"method=GET path=/api/engine/1/cycle/1 endpoint=cycle_reading "
+        r"unit=1 status=200 duration_ms=\d+\.\d",
+        line,
+    )
+
+
+def test_unhandled_error_returns_generic_500_and_logs_request(
+    monkeypatch, caplog, predictions_path
+):
+    app = create_app(predictions_path=predictions_path)
+    app.config.update(DEBUG=False, TESTING=False)
+
+    def fail():
+        raise RuntimeError("private exception detail")
+
+    monkeypatch.setitem(app.view_functions, "health", fail)
+    response = app.test_client().get("/health")
+
+    assert response.status_code == 500
+    assert "Internal Server Error" in response.text
+    assert "private exception detail" not in response.text
+    assert "Traceback" not in response.text
+    (line,) = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert re.fullmatch(
+        r"method=GET path=/health endpoint=health unit= status=500 duration_ms=\d+\.\d",
+        line,
+    )
 
 
 def test_live_includes_rul_and_split(predictions_path):
