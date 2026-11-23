@@ -7,6 +7,7 @@ from urllib.parse import quote
 import pandas as pd
 from flask import Flask, abort, g, jsonify, render_template, request
 
+from assistant.flags import t24_band
 from loader import load_data
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -45,7 +46,6 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
     data = load_data(DATA_DIR / "train_FD001.txt")
     predictions = _load_predictions(predictions_path)
     final_cycles = data.groupby("unit")["cycle"].max()
-    early_readings = data.loc[data["cycle"].between(1, 30)]
     readings_by_cycle = data.set_index(["unit", "cycle"], drop=False)
     live_started_at = {}
     playback_lock = Lock()
@@ -78,14 +78,13 @@ def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv
 
         panels = []
         for unit in selected:
-            reference = early_readings.loc[early_readings["unit"] != unit, "s_2"]
-            lower, upper = reference.quantile([0.05, 0.95])
+            lower, upper = t24_band(data, unit)
             panels.append(
                 {
                     "unit": unit,
                     "final_cycle": int(final_cycles.loc[unit]),
-                    "band_lower": float(lower),
-                    "band_upper": float(upper),
+                    "band_lower": lower,
+                    "band_upper": upper,
                 }
             )
 
