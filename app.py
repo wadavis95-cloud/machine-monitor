@@ -8,15 +8,22 @@ from flask import Flask, abort, g, jsonify, render_template, request
 
 from assistant.eam import load_predictions
 from assistant.flags import t24_band
+from assistant.routes import assistant_routes
 from loader import load_data
 
 DATA_DIR = Path(__file__).parent / "data"
 logger = logging.getLogger(__name__)
 
 
-def create_app(predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv"):
+def create_app(
+    predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv",
+    eam_path: Path | None = DATA_DIR / "eam.sqlite",
+    chat_model_factory=None,
+):
     app = Flask(__name__, static_folder=None)
     app.logger.setLevel(logging.INFO)
+    app.config.update(EAM_PATH=eam_path, CHAT_MODEL_FACTORY=chat_model_factory)
+    app.register_blueprint(assistant_routes)
     data = load_data(DATA_DIR / "train_FD001.txt")
     predictions = load_predictions(predictions_path)
     final_cycles = data.groupby("unit")["cycle"].max()
