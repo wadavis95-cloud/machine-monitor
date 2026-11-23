@@ -22,7 +22,12 @@ def create_app(
 ):
     app = Flask(__name__, static_folder=None)
     app.logger.setLevel(logging.INFO)
-    app.config.update(EAM_PATH=eam_path, CHAT_MODEL_FACTORY=chat_model_factory)
+    app.config.update(
+        EAM_PATH=eam_path,
+        ASSISTANT_DATA_DIR=DATA_DIR,
+        CHAT_MODEL_FACTORY=chat_model_factory,
+    )
+    app.extensions["assistant_runs"] = ({}, Lock())
     app.register_blueprint(assistant_routes)
     data = load_data(DATA_DIR / "train_FD001.txt")
     predictions = load_predictions(predictions_path)
