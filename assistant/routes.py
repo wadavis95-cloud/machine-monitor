@@ -3,17 +3,24 @@ from contextlib import closing
 from threading import Thread
 from uuid import uuid4
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, render_template, request
 from httpx import ConnectError
 from langchain_ollama import ChatOllama
 from ollama import ResponseError
 
 from assistant.eam import connect, decide_draft, list_drafts
-from assistant.graph import build_graph, make_tools, run_question
+from assistant.graph import build_graph, make_tools, mermaid, run_question
 from assistant.tools import load_context
 
 assistant_routes = Blueprint("assistant", __name__)
 MODEL_ERROR = "Can't reach the local model (is Ollama running? `ollama pull qwen3:8b`)"
+
+
+@assistant_routes.get("/assistant")
+def assistant_page():
+    # Drawing the graph doesn't call the model or tools.
+    graph = build_graph(None, [])
+    return render_template("assistant.html", graph_source=mermaid(graph))
 
 
 def chat_model_factory():

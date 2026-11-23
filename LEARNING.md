@@ -76,3 +76,5 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Conditional graph edge | A repair ticket goes to the parts desk if it needs parts, or to the exit if the job is done. | "I used a conditional edge to send a model reply to the tools node when it asks for a tool and end the run when it gives an answer." |
 | Background thread | A clerk hands you a ticket while a mechanic starts the repair. | "I returned a run ID immediately and used a thread to run the assistant in the background." |
 | Polling | Check the repair board with your ticket number until the job is done. | "The browser can use the run ID to ask for completed steps and the final answer." |
+| Incremental rendering | Add only the new entries to a repair log when the clerk reads the full list back. | "I used the number of steps already on screen to append only new steps from each poll." |
+| Display ID | An order slip shows a few digits for easy reading, while the scanner reads the full barcode. | "I shortened draft IDs on screen and used the full ID in approval requests." |

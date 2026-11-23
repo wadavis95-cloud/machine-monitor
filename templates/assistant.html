@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maintenance assistant</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17283a; background: #edf2f6; }
+    main { max-width: 48rem; margin: auto; padding: clamp(1rem, 4vw, 3rem); }
+    section, form { background: white; border: 1px solid #d3dfe8; border-radius: .75rem; padding: 1rem; margin: 1rem 0; }
+    h2 { margin-top: 0; }
+    label, textarea { display: block; }
+    textarea { box-sizing: border-box; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
+    button { font: inherit; padding: .35rem .65rem; }
+    li button { margin-inline-start: .5rem; }
+    li + li { margin-top: .5rem; }
+    #diagram { text-align: center; }
+    #diagram svg { max-height: 16rem; }
+    #diagram[data-active="model"] .model-node rect,
+    #diagram[data-active="tools"] .tools-node rect { fill: #fff1d0 !important; stroke: #945600 !important; stroke-width: 3px; }
+    #answer, #steps, #drafts, #tool-calls, pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <a href="{{ url_for('dashboard') }}">Back to dashboard</a>
+    <h1>Maintenance assistant</h1>
+    <form id="question-form">
+      <label for="question">Ask about the fleet</label>
+      <textarea id="question" maxlength="500" rows="3" required></textarea>
+      <button id="ask" type="submit">Ask</button>
+      <p id="run-status" role="status"></p>
+    </form>
+
+    <section>
+      <h2>Run graph</h2>
+      <div id="diagram"><pre id="graph-source">{{ graph_source }}</pre></div>
+      <ol id="steps" aria-label="Run steps"></ol>
+    </section>
+
+    <section>
+      <h2>Answer</h2>
+      <p id="answer" aria-live="polite"></p>
+      <details>
+        <summary>How I got this</summary>
+        <ol id="tool-calls"></ol>
+      </details>
+    </section>
+
+    <section>
+      <h2>Drafts awaiting approval</h2>
+      <p id="draft-status" role="status"></p>
+      <ul id="drafts"></ul>
+    </section>
+  </main>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.12.2/dist/mermaid.esm.min.mjs";
+
+    const diagram = document.getElementById("diagram");
+    const source = document.getElementById("graph-source").textContent;
+    mermaid.initialize({ startOnLoad: false });
+    // Name the graph nodes so CSS can highlight them without redrawing the graph.
+    const { svg } = await mermaid.render(
+      "assistant-graph", source + "\nclass model model-node;\nclass tools tools-node;"
+    );
+    diagram.innerHTML = svg;
+  </script>
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      const byId = id => document.getElementById(id);
+      const question = byId("question");
+      const ask = byId("ask");
+      const runStatus = byId("run-status");
+      const diagram = byId("diagram");
+      const steps = byId("steps");
+      const answer = byId("answer");
+      const toolCalls = byId("tool-calls");
+      const drafts = byId("drafts");
+      const draftStatus = byId("draft-status");
+      let draftRefresh = 0;
+
+      async function fetchJson(url, options) {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        return data;
+      }
+
+      function listItem(text) {
+        const item = document.createElement("li");
+        item.textContent = text;
+        return item;
+      }
+
+      async function refreshDrafts() {
+        // If two refreshes overlap, only the newest one can update the list.
+        const refresh = ++draftRefresh;
+        try {
+          const pending = await fetchJson("/api/drafts");
+          if (refresh !== draftRefresh) return;
+          drafts.replaceChildren(...pending.map(draftRow));
+          draftStatus.textContent = pending.length ? "" : "No drafts awaiting approval.";
+        } catch (error) {
+          if (refresh === draftRefresh) draftStatus.textContent = error.message;
+        }
+      }
+
+      function draftRow(draft) {
+        const summary = draft.kind === "work_order"
+          ? `Work order · Engine ${draft.unit} · ${draft.summary}`
+          : `Part request · ${draft.qty} × ${draft.part_id} · ${draft.reason}`;
+        const row = listItem(`${draft.id.slice(0, 8)}… · ${summary}`);
+        const buttons = ["Approve", "Reject"].map(label => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = label;
+          button.addEventListener("click", async () => {
+            for (const action of buttons) action.disabled = true;
+            let decisionError = "";
+            try {
+              await fetchJson(`/api/drafts/${encodeURIComponent(draft.id)}/${label.toLowerCase()}`, {
+                method: "POST",
+              });
+            } catch (error) {
+              decisionError = error.message;
+            }
+            await refreshDrafts();
+            if (decisionError) draftStatus.textContent = decisionError;
+            for (const action of buttons) action.disabled = false;
+          });
+          return button;
+        });
+        row.append(...buttons);
+        return row;
+      }
+
+      function finishRun(message) {
+        runStatus.textContent = message;
+        diagram.dataset.active = "";
+        ask.disabled = false;
+      }
+
+      async function pollRun(runId) {
+        try {
+          const run = await fetchJson(`/api/assistant/runs/${runId}`);
+          // Each poll includes the full history. Skip the steps already on screen.
+          for (const step of run.steps.slice(steps.children.length)) {
+            steps.append(listItem(
+              `${step.kind} · ${step.name} ${JSON.stringify(step.args)} · ${step.result || "—"} · ${step.duration_ms} ms`
+            ));
+            diagram.dataset.active = step.kind === "tool" ? "tools" : "model";
+          }
+          if (run.status === "running") {
+            setTimeout(() => pollRun(runId), 500);
+            return;
+          }
+          answer.textContent = run.answer ?? "";
+          toolCalls.replaceChildren(...run.tool_calls.map(call =>
+            listItem(`${call.name} ${JSON.stringify(call.args)}`)
+          ));
+          finishRun(run.status === "error" ? run.error : "Run complete.");
+          await refreshDrafts();
+        } catch (error) {
+          finishRun(error.message);
+        }
+      }
+
+      byId("question-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        if (ask.disabled) return;
+        ask.disabled = true;
+        runStatus.textContent = "Running…";
+        diagram.dataset.active = "model";
+        steps.replaceChildren();
+        toolCalls.replaceChildren();
+        answer.textContent = "";
+        try {
+          const { run_id } = await fetchJson("/api/assistant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question: question.value }),
+          });
+          await pollRun(run_id);
+        } catch (error) {
+          finishRun(error.message);
+        }
+      });
+
+      return refreshDrafts();
+    });
+  </script>
+</body>
+</html>

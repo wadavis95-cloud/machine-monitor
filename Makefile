@@ -12,7 +12,7 @@ check:
 	$(PYTHON) -m ruff check .
 	$(PYTHON) -m ruff format --check .
 	$(PYTHON) -m pytest
-	node --test test_dashboard.js
+	node --test test_dashboard.js test_assistant_page.js
 
 bench:
 	$(PYTHON) -m scripts.bench
