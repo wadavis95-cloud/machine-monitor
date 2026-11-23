@@ -54,3 +54,5 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | PR template | A repair request form prompts everyone to describe the problem and say what they tried. | "I used a pull request template so reviewers always know where to find what changed, why, and how it was tested." |
 | Health check | A dashboard light tells you whether a machine is ready or running with a missing feature. | "I added a health endpoint that reports whether sensor readings and saved predictions are available." |
 | Structured logging | A service ticket puts the same labels on each job so you can search and compare them. | "I logged each request with named fields for its route, HTTP status, and elapsed time." |
+| p95 / percentiles | Line up checkout waits from shortest to longest and look near the slow end. | "A p95 of 10 ms means about 95 percent of requests finished within 10 ms." |
+| Profiling | Follow a recipe with a stopwatch to see which steps take the most time. | "I profiled the slowest endpoint group to see which functions and their calls took the most time." |
