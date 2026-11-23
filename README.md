@@ -31,6 +31,8 @@ make run
 
 Open [localhost:5002](http://localhost:5002) in your browser. The repository includes the sensor data and predictions CSV needed for the dashboard.
 
+`GET /health` returns the engine count and whether saved predictions are available.
+
 ## Test
 
 ```sh
