@@ -70,3 +70,7 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | HTTP 409 Conflict | A clerk checks a ticket and sees that someone already signed it. | "I tested that approving a draft twice returns 409 and leaves the saved row unchanged." |
 | Conditional SQL update | A clerk can stamp a ticket only while it says “awaiting review.” | "I put the draft status check in the UPDATE so two requests can't both decide the same draft." |
 | Flask blueprint | Keep all the draft service counters together in one department. | "I grouped draft routes in a blueprint and registered it with the Flask app." |
+| Scripted fake model | Give an actor cue cards so they say the same lines at each rehearsal. | "I tested the agent loop with preset model replies so I could check the exact order of steps without running a live model." |
+| Tool argument coercion | A clerk reads the written digit “2” and enters it in the quantity box as a number. | "I let the tool's type rules convert a quantity sent as text to an integer before it reaches the draft function." |
+| Partial function | Hand someone an order form with the warehouse address already filled in. | "I used `functools.partial` to give each tool the fleet context in advance, so the model only supplies the remaining arguments." |
+| Conditional graph edge | A repair ticket goes to the parts desk if it needs parts, or to the exit if the job is done. | "I used a conditional edge to send a model reply to the tools node when it asks for a tool and end the run when it gives an answer." |
