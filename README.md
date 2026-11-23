@@ -39,6 +39,13 @@ make check
 
 This runs Ruff's lint and format checks, the Python tests with pytest, and the dashboard tests with Node's built-in test runner. GitHub Actions runs the same command.
 
+## How changes land
+
+1. Codex prepares the changes in the working tree because its sandbox can't write to `.git`.
+2. You or Claude create a branch named `<type>/<topic>`, commit the changes, push the branch, and open a pull request with `gh pr create`.
+3. GitHub protects `main`. The automated CI job `check` must pass before merging, and even admins must follow that rule.
+4. Squash-merge the pull request to combine its commits into one on `main`. GitHub deletes the merged branch automatically.
+
 ## Data flow
 
 ```text

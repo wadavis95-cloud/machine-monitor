@@ -50,3 +50,5 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Make target | Press a button that starts a saved sequence on an appliance. | "I put linting, formatting checks, and tests behind `make check` so contributors can run them in the same order." |
 | Continuous integration | Use the same inspection checklist for each new batch from a factory. | "GitHub Actions runs `make check` in a clean environment on pushes and pull requests to catch problems early." |
 | Git branch and pull request | Edit a copy of a shared recipe, then ask someone to review your changes before updating the original. | "I made my changes on a branch and used a pull request to ask for review before merging into main." |
+| Branch protection | A door opens only after an inspection passes, even for the building manager. | "I protected `main` so GitHub requires the automated checks to pass before anyone can merge, including admins." |
+| PR template | A repair request form prompts everyone to describe the problem and say what they tried. | "I used a pull request template so reviewers always know where to find what changed, why, and how it was tested." |
