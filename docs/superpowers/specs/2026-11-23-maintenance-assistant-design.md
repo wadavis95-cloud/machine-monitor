@@ -95,6 +95,7 @@ A golden set of about 15 questions with checkable facts (e.g. "top 3 at-risk eng
 - **Phase 2:** RAG over work-order comments (local embeddings via Ollama) to answer "what fixed this last time?" and to give non-technical users step-by-step troubleshooting.
 - **Phase 3:** alerts. A scheduled rule detects risk; the LLM only writes the explanation.
 - **Stretch:** an MCP server exposing the same tools.
+- **Possible:** replace polling on `/assistant` with Server-Sent Events (SSE), so the server pushes each step instead of the page asking for it. Phase 1 uses polling (decided 2026-11-23, see the plan) because the dashboard already uses that pattern.
 
 ## Left to the builder
 The exact seed values and comment templates, the prompt wording, page styling, table column details beyond those listed, and the choice of a different 8B model if `qwen3:8b` handles tools poorly (record the reason in `experiments.md`).
