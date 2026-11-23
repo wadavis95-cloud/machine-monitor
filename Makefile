@@ -1,6 +1,6 @@
 PYTHON := .venv/bin/python
 
-.PHONY: setup run check
+.PHONY: setup run check bench
 
 setup:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -13,3 +13,6 @@ check:
 	$(PYTHON) -m ruff format --check .
 	$(PYTHON) -m pytest
 	node --test test_dashboard.js
+
+bench:
+	$(PYTHON) -m scripts.bench
