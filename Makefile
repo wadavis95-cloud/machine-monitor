@@ -1,6 +1,6 @@
 PYTHON := .venv/bin/python
 
-.PHONY: setup run check bench seed
+.PHONY: setup run check bench seed studio
 
 setup:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -19,3 +19,6 @@ bench:
 
 seed:
 	$(PYTHON) -m assistant.seed
+
+studio:
+	.venv/bin/langgraph dev

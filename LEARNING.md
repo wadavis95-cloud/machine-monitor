@@ -79,3 +79,4 @@ Concepts from this project, in plain words. Review it now and then. Repetition b
 | Incremental rendering | Add only the new entries to a repair log when the clerk reads the full list back. | "I used the number of steps already on screen to append only new steps from each poll." |
 | Display ID | An order slip shows a few digits for easy reading, while the scanner reads the full barcode. | "I shortened draft IDs on screen and used the full ID in approval requests." |
 | Graph factory | Set out a fresh repair tray for each job so it starts empty. | "I had Studio build a fresh copy of the assistant graph for each run so draft counts stay separate." |
+| Local .env file | Keep the building key in a drawer and put a sample label in the handbook. | "I configured Studio to read its API key from a gitignored file and documented the settings with a placeholder key." |

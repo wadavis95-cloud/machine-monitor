@@ -47,9 +47,16 @@ Open [localhost:5002/assistant](http://localhost:5002/assistant). Ask a fleet qu
 
 ### LangGraph Studio
 
-Studio's documented local setup uses a free LangSmith account and API key. The agent server runs on your machine without Docker, and the browser needs internet access to load the hosted Studio interface. See the [local server guide](https://docs.langchain.com/langsmith/local-dev-testing#langgraph-dev) and [Studio quickstart](https://docs.langchain.com/langsmith/quick-start-studio#local-development-server).
+1. Create a free LangSmith account and generate an API key. [LangSmith setup guide](https://docs.langchain.com/langsmith/create-account-api-key)
+2. Add the key to the gitignored `.env` file in the repository root. Keep tracing off with `LANGSMITH_TRACING=false`.
 
-Because setup requires an account, the project leaves the Studio CLI and `make studio` out of the standard setup. `langgraph.json` registers the graph for Studio and disables LangSmith tracing. If you configure Studio separately, run `make seed` first and start a fresh Studio thread for each question.
+   ```dotenv
+   LANGSMITH_API_KEY=replace_with_your_key
+   LANGSMITH_TRACING=false
+   ```
+
+3. Run `make setup` to install the CLI, then `make seed` and `make studio`. Open the printed Studio URL in a browser with internet access.
+4. Start a fresh Studio thread for each question. Studio runs its own copy of the graph, so runs from `/assistant` won't appear there.
 
 ## Test
 
