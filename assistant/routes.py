@@ -10,6 +10,7 @@ from ollama import ResponseError
 
 from assistant.eam import connect, decide_draft, list_drafts
 from assistant.graph import build_graph, make_tools, mermaid, run_question
+from assistant.guardrails import finalize_answer
 from assistant.tools import load_context
 
 assistant_routes = Blueprint("assistant", __name__)
@@ -51,6 +52,9 @@ def _run_in_background(app, run, lock, question):
             model = model.bind_tools(tools)
         graph = build_graph(model, tools, ctx=ctx, on_step=on_step)
         result = run_question(graph, question)
+        result["answer"] = finalize_answer(
+            result["answer"], result["tool_calls"], result["drafts"]
+        )
     except Exception as error:
         if isinstance(error, (ConnectError, ConnectionError)) or (
             isinstance(error, ResponseError) and error.status_code == 404

@@ -47,6 +47,18 @@ class RepeatingToolModel:
         return _tool_call(call_id=f"call-{next(self.call_numbers)}")
 
 
+def test_system_prompt_keeps_draft_and_tool_rules(graph_api):
+    prompt = graph_api.SYSTEM_PROMPT
+    assert (
+        "Only say a request was drafted if draft_part_request returned its ID in this run."
+        in prompt
+    )
+    assert "Use only field names and values returned by tools" in prompt
+    assert "Do not invent labels or calculate dates or cycles" in prompt
+    assert "If no unit is given, call fleet_status first" in prompt
+    assert "call parts_for for the top units" in prompt
+
+
 # The graph runs the requested fleet tool and returns the model's final answer.
 def test_graph_calls_tool_then_answers(graph_api, ctx):
     answer = "Engine X needs attention [fleet_status]."

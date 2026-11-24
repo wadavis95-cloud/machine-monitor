@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "maintenance_assistant": "./assistant/studio.py:graph"
+  },
+  "env": "./.env"
+}

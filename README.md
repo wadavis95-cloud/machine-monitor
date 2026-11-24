@@ -33,6 +33,31 @@ Open [localhost:5002](http://localhost:5002) in your browser. The repository inc
 
 `GET /health` returns the engine count and whether saved predictions are available.
 
+## Run the maintenance assistant
+
+After project setup, install Ollama using the [official download page](https://ollama.com/download). Open the Ollama app on macOS or start the Ollama service on Linux. From the repository root, run these commands.
+
+```sh
+ollama pull qwen3:8b
+make seed
+make run
+```
+
+Open [localhost:5002/assistant](http://localhost:5002/assistant). Ask a fleet question and watch the model and tool steps appear. The assistant can save work order and part request drafts for you to review. Python and JavaScript tests run without Ollama.
+
+### LangGraph Studio
+
+1. Create a free LangSmith account and generate an API key. [LangSmith setup guide](https://docs.langchain.com/langsmith/create-account-api-key)
+2. Add the key to the gitignored `.env` file in the repository root. Keep tracing off with `LANGSMITH_TRACING=false`.
+
+   ```dotenv
+   LANGSMITH_API_KEY=replace_with_your_key
+   LANGSMITH_TRACING=false
+   ```
+
+3. Run `make setup` to install the CLI, then `make seed` and `make studio`. Open the printed Studio URL in a browser with internet access.
+4. Start a fresh Studio thread for each question. Studio runs its own copy of the graph, so runs from `/assistant` won't appear there.
+
 ## Test
 
 ```sh

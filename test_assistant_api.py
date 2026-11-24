@@ -41,7 +41,7 @@ def _finished_run(client, url, worker):
 def test_run_completes_and_returns_answer(ctx, threads):
     waiting_for_answer = Event()
     release_answer = Event()
-    answer = "Fleet checked [fleet_status]."
+    answer = "Fleet checked."
 
     class PausingModel(ScriptedModel):
         def invoke(self, messages):
@@ -71,7 +71,7 @@ def test_run_completes_and_returns_answer(ctx, threads):
     steps = result.pop("steps")
     assert result == {
         "status": "done",
-        "answer": answer,
+        "answer": answer + "\n\nSources: [fleet_status]",
         "tool_calls": [{"name": "fleet_status", "args": {"top_n": 3}}],
         "drafts": [],
         "error": None,
