@@ -12,9 +12,12 @@ from langgraph.graph.state import CompiledStateGraph
 from assistant import tools as fleet_tools
 
 SYSTEM_PROMPT: str = (
-    "Answer using only tool results. Cite sources inline, for example "
-    "[fleet_status] or [WO-1001]. Say requests were drafted, never ordered "
-    "or submitted. Say plainly when data is missing."
+    "- Use only field names and values returned by tools. "
+    "Do not invent labels or calculate dates or cycles. Say when data is missing.\n"
+    "- If no unit is given, call fleet_status first.\n"
+    "- For parts with no unit, call parts_for for the top units from fleet_status "
+    "(up to three). Recommend only parts with needs_order=true.\n"
+    "- Only say a request was drafted if draft_part_request returned its ID in this run."
 )
 MAX_TOOL_CALLS = 6
 logger = logging.getLogger(__name__)
