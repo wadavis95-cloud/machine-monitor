@@ -49,6 +49,7 @@
     </header>
 
     <div class="playback">
+      <a href="{{ url_for('assistant.assistant_page') }}">Maintenance assistant</a>
       {% if multi %}
       <form class="engine-picker" action="{{ url_for('multi_engine_dashboard') }}" method="get">
         {% for engine in selected %}

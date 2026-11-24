@@ -138,3 +138,20 @@ def test_each_run_gets_its_own_draft_budget(ctx, threads):
         draft_ids.extend(result["drafts"])
 
     assert len(set(draft_ids)) == 6
+
+
+def test_assistant_page_renders():
+    response = create_app().test_client().get("/assistant")
+
+    assert response.status_code == 200
+    assert b"graph TD" in response.data
+    assert b'id="question"' in response.data
+
+
+def test_dashboard_links_to_assistant():
+    client = create_app().test_client()
+
+    for path in ("/", "/engines"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert b'href="/assistant"' in response.data
