@@ -1,11 +1,17 @@
 import re
 
+ENGINE_LABEL = r"(?:engine|unit(?:\s+id)?)\s+(?P<unit>\d+)"
+ENGINE_PATTERN = re.compile(rf"\b{ENGINE_LABEL}\b", re.IGNORECASE)
+
 # Seeded work orders have numeric IDs. Drafts have 32 hexadecimal characters.
 ID_PATTERN = re.compile(
-    r"\b(?:WO-(?:[0-9a-f]{32}|\d+)|PR-[0-9a-f]{32}|P-[A-Z]+-\d+|engine\s+\d+)\b",
+    r"\b(?:WO-(?:[0-9a-f]{32}|\d+)|PR-[0-9a-f]{32}|P-[A-Z]+-\d+|"
+    rf"{ENGINE_LABEL})\b",
     re.IGNORECASE,
 )
-UNIT_PATTERN = re.compile(r'"unit"\s*:\s*(\d+)\b')
+UNIT_PATTERN = re.compile(
+    r'"unit"\s*:\s*(?P<quote>"?)(?P<unit>\d+)(?P=quote)(?=\s*(?:[,}]|$))'
+)
 
 
 def tools_ok(called: list[str], expected: set[str]) -> bool:
@@ -13,27 +19,34 @@ def tools_ok(called: list[str], expected: set[str]) -> bool:
 
 
 def facts_ok(answer: str, facts: list[str]) -> bool:
+    units = set(ENGINE_PATTERN.findall(answer))
     answer = answer.casefold()
-    return all(fact.casefold() in answer for fact in facts)
+    for fact in facts:
+        engine = ENGINE_PATTERN.fullmatch(fact)
+        matched = engine["unit"] in units if engine else fact.casefold() in answer
+        if not matched:
+            return False
+    return True
 
 
-def invented_ids(answer: str, tool_results_text: str) -> list[str]:
-    def id_key(citation: str) -> str:
-        return " ".join(citation.casefold().split())
+def invented_ids(
+    answer: str, tool_results_text: str, extra_reference_text: str = ""
+) -> list[str]:
+    def id_key(match: re.Match) -> str:
+        unit = match["unit"]
+        return f"engine {unit}" if unit else match.group().casefold()
 
-    returned = {
-        id_key(match.group()) for match in ID_PATTERN.finditer(tool_results_text)
-    }
-    # Tool JSON represents an engine as "unit": 3 rather than "engine 3".
-    returned.update(
-        f"engine {unit}" for unit in UNIT_PATTERN.findall(tool_results_text)
+    references = f"{tool_results_text}\n{extra_reference_text}"
+    known = {id_key(match) for match in ID_PATTERN.finditer(references)}
+    # Tool JSON can carry the unit as a number or a numeric string.
+    known.update(
+        f"engine {match['unit']}" for match in UNIT_PATTERN.finditer(references)
     )
     missing = {}
     for match in ID_PATTERN.finditer(answer):
-        citation = match.group()
-        key = id_key(citation)
-        if key not in returned:
-            missing.setdefault(key, citation)
+        key = id_key(match)
+        if key not in known:
+            missing.setdefault(key, match.group())
     return list(missing.values())
 
 

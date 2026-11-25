@@ -1,7 +1,9 @@
+import json
 import re
 from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from textwrap import indent
 
 from httpx import ConnectError
 from langchain_core.messages import ToolMessage
@@ -18,6 +20,7 @@ from loader import load_data
 
 REPORT = DATA_DIR.parent / "reports" / "assistant_eval.md"
 COLUMNS = ("Tools", "Facts", "IDs", "Drafts", "Sources", "PM label", "Overall")
+ANSWER_PREVIEW_LIMIT = 600
 NEXT_PM_VALUE = re.compile(
     r"\bnext\s+pm\b(?:[\s:=|(]|\b(?:date|cycle|is|at|on)\b)*\d",
     re.IGNORECASE,
@@ -59,15 +62,39 @@ def score_item(item, ctx, model):
     answer = result["answer"]
     called = [call["name"] for call in result["tool_calls"]]
     plain_answer = answer.replace("*", "").replace("`", "")
+    call_args = [json.dumps(call["args"]) for call in result["tool_calls"]]
+    references = "\n".join([item["question"], *call_args])
+    missing_ids = invented_ids(answer, "\n".join(tool_results), references)
     checks = [
         tools_ok(called, item["expect_tools"]),
         facts_ok(answer, facts),
-        not invented_ids(answer, "\n".join(tool_results)),
+        not missing_ids,
         drafts_ok(result["drafts"], item["should_draft"]),
         sources_ok(answer, called, {tool.name for tool in tools}),
         not NEXT_PM_VALUE.search(plain_answer),
     ]
-    return [*checks, all(checks)]
+    overall = all(checks)
+    failure = []
+    if not overall:
+        missing_facts = [fact for fact in facts if not facts_ok(answer, [fact])]
+        preview = answer[:ANSWER_PREVIEW_LIMIT]
+        if len(answer) > ANSWER_PREVIEW_LIMIT:
+            preview += "…"
+        failure = [
+            "",
+            f"### {item['id']}",
+            "",
+            f"- **Question** {item['question']}",
+            f"- **Expected facts** {', '.join(facts) or 'None'}",
+            f"- **Missing facts** {', '.join(missing_facts) or 'None'}",
+            f"- **Invented IDs** {', '.join(missing_ids) or 'None'}",
+            f"- **Tools called** {', '.join(called) or 'None'}",
+            "",
+            "**Final answer**",
+            "",
+            indent(preview if preview.strip() else "(empty answer)", "    "),
+        ]
+    return [*checks, overall], failure
 
 
 def main():
@@ -93,10 +120,12 @@ def main():
     ]
     print("\n".join(lines), flush=True)
     scores = []
+    failures = []
     for item in items:
         with TemporaryDirectory() as folder:
-            checks = score_item(item, fresh_context(folder), model)
+            checks, failure = score_item(item, fresh_context(folder), model)
         scores.append(checks)
+        failures.extend(failure)
         cells = ["pass" if check else "fail" for check in checks]
         row = "| " + " | ".join([item["id"], *cells]) + " |"
         lines.append(row)
@@ -106,6 +135,8 @@ def main():
     summary = "| Total | " + " | ".join(totals) + " |"
     lines.append(summary)
     print(summary)
+    if failures:
+        lines.extend(["", "## Failures", *failures])
     REPORT.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
