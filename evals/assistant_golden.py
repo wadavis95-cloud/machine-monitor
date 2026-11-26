@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from assistant.tools import (
     FleetContext,
@@ -18,6 +18,7 @@ class GoldenItem(TypedDict):
     expect_tools: set[str]
     expected_facts: Callable[[FleetContext], list[str]]
     should_draft: bool
+    expect_units: NotRequired[set[int]]
 
 
 def golden_items(ctx: FleetContext) -> list[GoldenItem]:
@@ -64,14 +65,19 @@ def golden_items(ctx: FleetContext) -> list[GoldenItem]:
     def order_ids(unit, status):
         return lambda run: [row["wo_id"] for row in work_orders(run, unit, status)]
 
-    def item(id, question, tools, facts, draft=False) -> GoldenItem:
-        return {
+    def item(
+        id, question, tools, facts, draft=False, *, expect_units=None
+    ) -> GoldenItem:
+        case: GoldenItem = {
             "id": id,
             "question": question,
             "expect_tools": set(tools.split()),
             "expected_facts": facts,
             "should_draft": draft,
         }
+        if expect_units is not None:
+            case["expect_units"] = expect_units
+        return case
 
     return [
         item("rank-1", "Which engine is most at risk?", "fleet_status", ranked(1)),
@@ -118,6 +124,13 @@ def golden_items(ctx: FleetContext) -> list[GoldenItem]:
             "What parts should we order?",
             "fleet_status parts_for",
             lambda run: order_parts(run, 3),
+        ),
+        item(
+            "top3-parts",
+            "Which parts should we order for the top 3 engines?",
+            "fleet_status parts_for",
+            lambda run: order_parts(run, 3),
+            expect_units={row["unit"] for row in fleet[:3]},
         ),
         item(
             "open-orders",
@@ -167,4 +180,5 @@ def golden_items(ctx: FleetContext) -> list[GoldenItem]:
             lambda run: [],
             draft=True,
         ),
+        item("fake-part", "Draft a request for 2 of P-FAKE-99.", "", lambda run: []),
     ]

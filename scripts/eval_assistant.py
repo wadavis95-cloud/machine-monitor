@@ -12,14 +12,14 @@ from ollama import ResponseError
 from assistant.eam import load_predictions
 from assistant.graph import build_graph, make_tools, run_question
 from assistant.routes import MODEL_ERROR, chat_model_factory
-from assistant.scoring import drafts_ok, facts_ok, invented_ids, tools_ok
+from assistant.scoring import chain_ok, drafts_ok, facts_ok, invented_ids, tools_ok
 from assistant.seed import DATA_DIR, build_eam
 from assistant.tools import fleet_status, load_context
 from evals.assistant_golden import MISSING_RUL_CASE, golden_items
 from loader import load_data
 
 REPORT = DATA_DIR.parent / "reports" / "assistant_eval.md"
-COLUMNS = ("Tools", "Facts", "IDs", "Drafts", "Sources", "PM label", "Overall")
+COLUMNS = ("Tools", "Facts", "IDs", "Drafts", "Sources", "PM label", "Chain", "Overall")
 ANSWER_PREVIEW_LIMIT = 600
 NEXT_PM_VALUE = re.compile(
     r"\bnext\s+pm\b(?:[\s:=|(]|\b(?:date|cycle|is|at|on)\b)*\d",
@@ -72,6 +72,7 @@ def score_item(item, ctx, model):
         drafts_ok(result["drafts"], item["should_draft"]),
         sources_ok(answer, called, {tool.name for tool in tools}),
         not NEXT_PM_VALUE.search(plain_answer),
+        chain_ok(result["tool_calls"], item.get("expect_units")),
     ]
     overall = all(checks)
     failure = []

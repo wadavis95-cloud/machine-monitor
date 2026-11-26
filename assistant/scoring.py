@@ -18,6 +18,17 @@ def tools_ok(called: list[str], expected: set[str]) -> bool:
     return expected.issubset(called)
 
 
+def chain_ok(tool_calls: list[dict], expect_units: set[int] | None) -> bool:
+    if not expect_units:
+        return True
+    looked_up = {
+        str(call["args"].get("unit"))
+        for call in tool_calls
+        if call["name"] == "parts_for"
+    }
+    return all(str(unit) in looked_up for unit in expect_units)
+
+
 def facts_ok(answer: str, facts: list[str]) -> bool:
     units = set(ENGINE_PATTERN.findall(answer))
     answer = answer.casefold()

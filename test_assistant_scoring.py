@@ -3,7 +3,7 @@ import json
 import pytest
 from langchain_core.messages import AIMessage
 
-from assistant.scoring import drafts_ok, facts_ok, invented_ids, tools_ok
+from assistant.scoring import chain_ok, drafts_ok, facts_ok, invented_ids, tools_ok
 from evals.assistant_golden import golden_items
 from scripts import eval_assistant
 from test_assistant_graph import ScriptedModel, _tool_call
@@ -21,6 +21,29 @@ def test_tools_ok_requires_every_expected_call():
         ["fleet_status", "parts_for", "engine_detail"], {"fleet_status", "parts_for"}
     )
     assert not tools_ok(["fleet_status"], {"fleet_status", "parts_for"})
+
+
+def test_chain_ok_accepts_parts_calls_for_every_expected_unit():
+    calls = [
+        {"name": "parts_for", "args": {"unit": 27}},
+        {"name": "parts_for", "args": {"unit": "39"}},
+        {"name": "parts_for", "args": {"unit": 74}},
+    ]
+    assert chain_ok(calls, {27, 39, 74})
+
+
+def test_chain_ok_rejects_a_missing_parts_lookup():
+    calls = [
+        {"name": "parts_for", "args": {"unit": 27}},
+        {"name": "parts_for", "args": {"unit": 27}},
+        {"name": "parts_for", "args": {"unit": 74}},
+        {"name": "engine_detail", "args": {"unit": 39}},
+    ]
+    assert not chain_ok(calls, {27, 39, 74})
+
+
+def test_chain_ok_passes_without_expected_units():
+    assert chain_ok([], None)
 
 
 def test_facts_ok_requires_every_substring():
@@ -167,6 +190,7 @@ def test_eval_report_shows_evidence_only_for_failures(tmp_path, monkeypatch):
             "expect_tools": {"fleet_status"},
             "expected_facts": lambda ctx: ["engine 3", "engine 4", "yellow"],
             "should_draft": False,
+            "expect_units": {3},
         },
         {
             "id": "passed-case",
@@ -184,7 +208,8 @@ def test_eval_report_shows_evidence_only_for_failures(tmp_path, monkeypatch):
     eval_assistant.main()
 
     markdown = report.read_text(encoding="utf-8")
-    assert "| Total | 2/2 | 1/2 | 1/2 | 2/2 | 2/2 | 2/2 | 1/2 |" in markdown
+    assert "| PM label | Chain | Overall |" in markdown
+    assert "| Total | 2/2 | 1/2 | 1/2 | 2/2 | 2/2 | 2/2 | 1/2 | 1/2 |" in markdown
     assert "## Failures\n\n### failed-case" in markdown
     assert "### passed-case" not in markdown
     assert "**Question** Which engines should we inspect?" in markdown
