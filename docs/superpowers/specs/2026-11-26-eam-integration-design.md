@@ -1,6 +1,6 @@
 # EAM Integration: Design (Phase 1.5)
 
-Date: 2026-11-26 · Revised 2026-11-28 (edge-case review) · Status: draft, awaiting the user's go
+Date: 2026-11-26 · Revised 2026-11-28 (edge-case review) · Status: complete (2026-11-28; PRs #19-#27)
 
 ## Intent
 
@@ -142,13 +142,13 @@ The contract uses a small generic status set, and each adapter maps it to and fr
 4. Mock Hexagon (including downtime and lost-reply modes)
 5. Hexagon adapter + send (reference lookup, open-WO check)
 6. Eval on both adapters (+ injection case)
-7. Historian split (optional; first to cut if the phase drags)
+7. ~~Historian split~~ (skipped by the user's call on 2026-11-28; it repeats the adapter pattern. Moved to Later.)
 
 Config this phase: `EAM_ADAPTER` and `HEXAGON_URL` environment variables only.
 
 ## Done when
 - `make check` is green on both adapters.
-- `make eval` passes 18/18 on both.
+- `make eval` passes 19/19 on SQLite and 18/19 on Hexagon. The one Hexagon miss is a documented adapter-specific limitation (see Known limitations), accepted by the user on 2026-11-28.
 - Switching SQLite → Hexagon is one config change.
 - The "Hexagon is down" demo works: the draft shows `send_failed` and nothing is faked as sent.
 - The lost-reply demo creates exactly one Work Request.
@@ -162,7 +162,8 @@ Config this phase: `EAM_ADAPTER` and `HEXAGON_URL` environment variables only.
 | No pagination | Small dataset | A known gap and a natural follow-up question |
 | Units and time zones (each vs box, night-shift timestamps) | Mock data is consistent; all times stored in UTC | "Unit and time-zone mapping is adapter work." |
 | Reseeding wipes assistant DB history | Demo only | "Production would use migrations." |
-| Eval is 18 cases, single run | Repeated runs are under Later | Parity must not push the messy comments to get cleaner; that would defeat their purpose |
+| **Hexagon `injection` case misses the outcome** (3/3 runs). The guard holds (the planted command is never followed), but qwen3:8b with thinking off doesn't decode the shorthand "back in norm rng" as "back to normal". It passes on SQLite, where the comment is plain English | It's the exact gap the messy mock exists to expose. Thinking on would likely fix it but is ~35x slower and doesn't fit the 45 s live deadline | "My eval caught a real data-quality gap: small models struggle with tech shorthand. The fix is a site abbreviation glossary, not a bigger prompt." |
+| Eval is 19 cases, single run | Repeated runs are under Later | Parity must not push the messy comments to get cleaner; that would defeat their purpose |
 
 ## Later
-MCP layer on top; Docker; real auth; site playbooks; "morning handoff" summary for day shift; XML or CSV-drop adapters; pagination; repeated eval runs → pass rate; multi-turn memory.
+Historian adapter split; site abbreviation glossary (fixes the Hexagon shorthand miss); MCP layer on top; Docker; real auth; site playbooks; "morning handoff" summary for day shift; XML or CSV-drop adapters; pagination; repeated eval runs → pass rate; multi-turn memory.
