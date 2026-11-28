@@ -1,10 +1,12 @@
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from assistant import tools
 from assistant.eam import connect, load_predictions
+from assistant.eam_contract import Asset
 from assistant.seed import build_eam
 from loader import load_data
 
@@ -134,3 +136,29 @@ def test_work_orders_preserves_legacy_fields_and_values(ctx, conn):
 
     assert expected[0]["parts_used"] == "P-OIL-01"
     assert tools.work_orders(ctx, 2) == expected
+
+
+def test_read_tools_use_injected_eam_and_prediction_split(tmp_path, monkeypatch):
+    asset = Asset("ENG-001", "Engine 1", "Line 1", current_cycle=100)
+    eam = SimpleNamespace(
+        list_assets=lambda: [asset],
+        get_asset=lambda asset_id: asset if asset_id == asset.asset_id else None,
+        list_work_orders=lambda asset_id, status=None: [],
+        list_parts=list,
+    )
+    monkeypatch.setattr(
+        tools,
+        "load_predictions",
+        lambda path: {(1, 99): {"split": "val", "rul_pred": 7}},
+    )
+    db_path = tmp_path / "unused.sqlite"
+    ctx = tools.load_context(db_path, DATA_DIR, eam=eam)
+
+    fleet = tools.fleet_status(ctx)
+    assert len(fleet) == 1
+    assert fleet[0]["split"] == "val"
+    assert fleet[0]["rul"] is None
+    assert tools.engine_detail(ctx, 1)["split"] == "val"
+    assert tools.parts_for(ctx, 1) == []
+    assert tools.work_orders(ctx, 1) == []
+    assert not db_path.exists()

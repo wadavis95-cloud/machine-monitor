@@ -3,17 +3,10 @@
 from collections.abc import Callable
 
 from assistant.eam_contract import EAM, Asset, Part
-from assistant.flags import flag_level
 
 ORDER_BUFFER_DAYS = 10
 FLAG_RANK = {"red": 0, "yellow": 1, "none": 2}
 MAX_DRAFTS = 3
-
-
-def assess_engine(
-    rul: int | None, t24: list[float], band: tuple[float, float]
-) -> tuple[int | None, str]:
-    return rul, flag_level(t24, *band)
 
 
 def rank_fleet(
