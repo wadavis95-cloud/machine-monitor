@@ -1,6 +1,6 @@
 PYTHON := .venv/bin/python
 
-.PHONY: setup run check bench seed studio eval
+.PHONY: setup run check bench seed studio eval mock-hexagon
 
 setup:
 	$(PYTHON) -m pip install -r requirements-dev.txt
@@ -25,3 +25,6 @@ studio:
 
 eval:
 	$(PYTHON) -m scripts.eval_assistant
+
+mock-hexagon:
+	$(PYTHON) -m flask --app mock_hexagon.app run --host 127.0.0.1 --port 5003
