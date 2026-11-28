@@ -12,7 +12,14 @@
     label, textarea { display: block; }
     textarea { box-sizing: border-box; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
     button { font: inherit; padding: .35rem .65rem; }
-    li button { margin-inline-start: .5rem; }
+    .draft-badge { display: inline-block; margin-inline-start: .5rem; border-radius: .4rem; padding: .1rem .45rem; background: #e8eef4; font-size: .875rem; font-weight: 600; }
+    .draft-badge[data-status="sent"] { color: #176346; background: #e2f5eb; }
+    .draft-badge[data-status="approved"], .draft-badge[data-status="stale"], .draft-changes { color: #754900; }
+    .draft-badge[data-status="approved"], .draft-badge[data-status="stale"] { background: #fff1d0; }
+    .draft-badge[data-status="send_failed"], .draft-error { color: #a12424; }
+    .draft-badge[data-status="send_failed"] { background: #fce9e9; }
+    .draft-details { margin-block: .35rem; }
+    .draft-actions { display: flex; gap: .5rem; margin-block-start: .4rem; }
     li + li { margin-top: .5rem; }
     #diagram { text-align: center; }
     #diagram svg { max-height: 16rem; }
@@ -48,7 +55,7 @@
     </section>
 
     <section>
-      <h2>Drafts awaiting approval</h2>
+      <h2>Draft review</h2>
       <p id="draft-status" role="status"></p>
       <ul id="drafts"></ul>
     </section>
@@ -79,12 +86,27 @@
       const drafts = byId("drafts");
       const draftStatus = byId("draft-status");
       let draftRefresh = 0;
+      let queue = [];
+      const completedDrafts = new Map();
+      const activeActions = new Set();
+      const actionErrors = new Map();
+      const statusLabels = {
+        draft: "Draft",
+        approved: "Approved · not sent",
+        sending: "Sending",
+        sent: "Sent",
+        rejected: "Rejected",
+        stale: "Stale",
+        send_failed: "Send failed",
+      };
 
       async function fetchJson(url, options) {
         const response = await fetch(url, options);
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error);
-        return data;
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || "Request failed. Try again.");
+        }
+        return response.json();
       }
 
       function listItem(text) {
@@ -93,16 +115,102 @@
         return item;
       }
 
+      function renderDrafts() {
+        const queuedIds = new Set(queue.map(draft => draft.id));
+        const rows = [
+          ...queue.map(draft => completedDrafts.get(draft.id) ?? draft),
+          ...[...completedDrafts.values()].filter(draft => !queuedIds.has(draft.id)),
+        ];
+        drafts.replaceChildren(...rows.map(draftRow));
+        const detachedError = [...actionErrors].find(([id]) =>
+          !queuedIds.has(id) && !completedDrafts.has(id)
+        );
+        draftStatus.textContent = detachedError?.[1] || (rows.length ? "" : "No drafts to review.");
+      }
+
       async function refreshDrafts() {
         // If two refreshes overlap, only the newest one can update the list.
         const refresh = ++draftRefresh;
         try {
           const pending = await fetchJson("/api/drafts");
           if (refresh !== draftRefresh) return;
-          drafts.replaceChildren(...pending.map(draftRow));
-          draftStatus.textContent = pending.length ? "" : "No drafts awaiting approval.";
+          queue = pending;
+          renderDrafts();
         } catch (error) {
           if (refresh === draftRefresh) draftStatus.textContent = error.message;
+        }
+      }
+
+      function changedEvidence(changes = {}) {
+        const lines = [];
+        const value = item => item ?? "unavailable";
+        const keys = (before, after) => new Set([...Object.keys(before), ...Object.keys(after)]);
+
+        if (changes.rul) {
+          const { stored, current } = changes.rul;
+          lines.push(`Remaining life was ${value(stored)}, now ${value(current)}`);
+        }
+        if (changes.stock) {
+          const { stored, current } = changes.stock;
+          for (const part of keys(stored, current)) {
+            const before = stored[part] ?? {};
+            const after = current[part] ?? {};
+            for (const store of keys(before, after)) {
+              if (before[store] !== after[store]) {
+                lines.push(`${part} (${store}) stock was ${value(before[store])}, now ${value(after[store])}`);
+              }
+            }
+          }
+        }
+        if (changes.work_orders) {
+          const { stored, current } = changes.work_orders;
+          for (const id of keys(stored, current)) {
+            const before = stored[id];
+            const after = current[id];
+            if (before?.status !== after?.status) {
+              lines.push(`${id} status was ${value(before?.status)}, now ${value(after?.status)}`);
+            }
+            if (before && after && before.comments !== after.comments) {
+              lines.push(`${id} comments changed`);
+            }
+          }
+        }
+        return lines;
+      }
+
+      async function decideDraft(draft, action) {
+        if (activeActions.has(draft.id)) return;
+        activeActions.add(draft.id);
+        actionErrors.delete(draft.id);
+        renderDrafts();
+        const url = `/api/drafts/${encodeURIComponent(draft.id)}`;
+        try {
+          const result = await fetchJson(`${url}/${action}`, { method: "POST" });
+          // The approve endpoint uses the EAM's status names on success.
+          const status = ["open", "submitted"].includes(result.status) ? "sent" : result.status;
+          if (status === "sent" || status === "rejected") {
+            // The review queue omits completed drafts. Keep the outcome on this page.
+            completedDrafts.set(draft.id, { ...draft, status });
+            queue = queue.filter(item => item.id !== draft.id);
+            if (status === "sent") {
+              try {
+                completedDrafts.set(draft.id, await fetchJson(url));
+              } catch {
+                actionErrors.set(draft.id, "Sent. Could not load the EAM ID.");
+              }
+            }
+          } else {
+            queue = queue.map(item => item.id === draft.id ? { ...item, status } : item);
+            if (status === "approved" || status === "send_failed") {
+              actionErrors.set(draft.id, "Could not send to the EAM. Try again.");
+            }
+          }
+        } catch (error) {
+          actionErrors.set(draft.id, error.message);
+        } finally {
+          activeActions.delete(draft.id);
+          renderDrafts();
+          await refreshDrafts();
         }
       }
 
@@ -111,27 +219,57 @@
           ? `Work order · Engine ${draft.unit} · ${draft.summary}`
           : `Part request · ${draft.qty} × ${draft.part_id} · ${draft.reason}`;
         const row = listItem(`${draft.id.slice(0, 8)}… · ${summary}`);
-        const buttons = ["Approve", "Reject"].map(label => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = label;
-          button.addEventListener("click", async () => {
-            for (const action of buttons) action.disabled = true;
-            let decisionError = "";
-            try {
-              await fetchJson(`/api/drafts/${encodeURIComponent(draft.id)}/${label.toLowerCase()}`, {
-                method: "POST",
-              });
-            } catch (error) {
-              decisionError = error.message;
-            }
-            await refreshDrafts();
-            if (decisionError) draftStatus.textContent = decisionError;
-            for (const action of buttons) action.disabled = false;
-          });
-          return button;
-        });
-        row.append(...buttons);
+        const badge = document.createElement("span");
+        badge.className = "draft-badge";
+        badge.dataset.status = draft.status;
+        badge.textContent = statusLabels[draft.status];
+        row.append(badge);
+        if (draft.status === "sent" && draft.external_id) {
+          const externalId = document.createElement("p");
+          externalId.className = "draft-details";
+          externalId.textContent = `EAM ID ${draft.external_id}`;
+          row.append(externalId);
+        }
+
+        const changes = changedEvidence(draft.evidence_changes);
+        if (changes.length) {
+          const evidence = document.createElement("div");
+          evidence.className = "draft-details draft-changes";
+          const heading = document.createElement("strong");
+          heading.textContent = "Changed since draft";
+          const list = document.createElement("ul");
+          list.append(...changes.map(listItem));
+          evidence.append(heading, list);
+          row.append(evidence);
+        }
+
+        const labels = {
+          draft: ["Approve", "Reject"],
+          approved: ["Retry"],
+          send_failed: ["Retry"],
+        }[draft.status];
+        if (labels) {
+          const actions = document.createElement("div");
+          actions.className = "draft-actions";
+          for (const label of labels) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = label;
+            button.disabled = activeActions.has(draft.id);
+            button.addEventListener("click", () => decideDraft(draft, label.toLowerCase()));
+            actions.append(button);
+          }
+          row.append(actions);
+        }
+
+        const error = actionErrors.get(draft.id);
+        if (error) {
+          const message = document.createElement("p");
+          message.className = "draft-details draft-error";
+          message.setAttribute("role", "alert");
+          message.textContent = error;
+          row.append(message);
+        }
         return row;
       }
 
