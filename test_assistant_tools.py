@@ -122,3 +122,15 @@ def test_work_orders_filters_by_status(ctx, conn):
     assert len(orders) == 1
     assert orders[0]["wo_id"] == "WO-TEST"
     assert orders[0]["status"] == "open"
+
+
+def test_work_orders_preserves_legacy_fields_and_values(ctx, conn):
+    expected = [
+        dict(row)
+        for row in conn.execute(
+            "SELECT * FROM work_orders WHERE unit = 2 ORDER BY wo_id"
+        )
+    ]
+
+    assert expected[0]["parts_used"] == "P-OIL-01"
+    assert tools.work_orders(ctx, 2) == expected
