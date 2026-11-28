@@ -18,7 +18,7 @@ from ollama import ResponseError
 from werkzeug.serving import make_server
 
 from assistant.eam import load_predictions
-from assistant.graph import build_graph, make_tools, run_question
+from assistant.graph import ModelCallTimeout, build_graph, make_tools, run_question
 from assistant.hexagon_eam import HexagonEAM
 from assistant.routes import MODEL_ERROR, chat_model_factory
 from assistant.scoring import chain_ok, drafts_ok, facts_ok, invented_ids, tools_ok
@@ -178,7 +178,19 @@ def _run_adapter(name, db_path, items, expected, model, *, eam=None):
             ctx = load_context(
                 db_path, DATA_DIR, eam=eam, draft_path=Path(folder) / "assistant.sqlite"
             )
-            checks, failure = score_item(item, ctx, model, facts=expected[item["id"]])
+            try:
+                checks, failure = score_item(
+                    item, ctx, model, facts=expected[item["id"]]
+                )
+            except ModelCallTimeout as error:
+                checks = [False] * len(COLUMNS)
+                failure = [
+                    "",
+                    f"#### {item['id']}",
+                    "",
+                    f"- **Question** {item['question']}",
+                    f"- **Error** {error}",
+                ]
         elapsed = perf_counter() - case_started
         scores.append(checks)
         failures.extend(failure)

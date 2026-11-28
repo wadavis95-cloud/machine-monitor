@@ -268,7 +268,7 @@ def draft_work_order(
 def draft_part_request(
     ctx: FleetContext, part_id: str, qty: int, reason: str, unit: int | None = None
 ) -> dict:
-    """Save a part request draft for review. Include the engine unit when known."""
+    """Save a part request draft for review. Include the engine unit only when the request is for a specific engine; otherwise leave unit out (never 0)."""
     error = rules.draft_error(len(ctx.drafts_made), qty)
     if error is not None:
         return {"error": error}

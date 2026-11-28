@@ -53,6 +53,11 @@ def test_system_prompt_keeps_draft_and_tool_rules(graph_api):
     )
     assert "Use only field names and values returned by tools" in prompt
     assert "Do not invent labels or calculate dates or cycles" in prompt
+    assert (
+        "Report the next PM cycle as unavailable unless a tool provides a PM schedule"
+        in prompt
+    )
+    assert "RUL and open work orders do not indicate a PM schedule" in prompt
     assert "If no unit is given, call fleet_status first" in prompt
     assert "call parts_for for the top units" in prompt
 

@@ -13,7 +13,14 @@ from assistant.eam import load_predictions
 from assistant.eam_contract import EAM_UNAVAILABLE_MESSAGE, EAMUnavailable
 from assistant.eam_factory import create_eam
 from assistant.evidence import recheck_evidence
-from assistant.graph import build_graph, make_tools, mermaid, run_question
+from assistant.graph import (
+    MODEL_CALL_TIMEOUT_SECONDS,
+    ModelCallTimeout,
+    build_graph,
+    make_tools,
+    mermaid,
+    run_question,
+)
 from assistant.guardrails import finalize_answer
 from assistant.tools import load_context
 
@@ -29,8 +36,13 @@ def assistant_page():
 
 
 def chat_model_factory():
+    model = os.environ.get("ASSISTANT_MODEL", "qwen3:8b")
     return ChatOllama(
-        model=os.environ.get("ASSISTANT_MODEL", "qwen3:8b"), temperature=0
+        model=model,
+        temperature=0,
+        num_predict=1024,
+        reasoning=False if model.split(":", 1)[0] == "qwen3" else None,
+        client_kwargs={"timeout": MODEL_CALL_TIMEOUT_SECONDS},
     )
 
 
@@ -66,6 +78,9 @@ def _run_in_background(app, run, lock, question):
     except EAMUnavailable:
         with lock:
             run.update(status="error", error=EAM_UNAVAILABLE_MESSAGE)
+    except ModelCallTimeout as error:
+        with lock:
+            run.update(status="error", error=str(error))
     except Exception as error:
         if isinstance(error, (ConnectError, ConnectionError)) or (
             isinstance(error, ResponseError) and error.status_code == 404
