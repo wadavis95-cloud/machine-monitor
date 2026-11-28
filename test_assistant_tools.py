@@ -6,7 +6,7 @@ import pytest
 
 from assistant import tools
 from assistant.eam import connect, load_predictions
-from assistant.eam_contract import Asset
+from assistant.eam_contract import EAM_UNAVAILABLE_MESSAGE, Asset, EAMUnavailable
 from assistant.seed import build_eam
 from loader import load_data
 
@@ -164,3 +164,31 @@ def test_read_tools_use_injected_eam_and_prediction_split(tmp_path, monkeypatch)
     assert tools.parts_for(ctx, 1) == []
     assert tools.work_orders(ctx, 1) == []
     assert not db_path.exists()
+
+
+def test_existing_open_order_returns_context_and_saves_no_draft(ctx):
+    result = tools.draft_work_order(ctx, 3, "Inspect fan", "Speed oscillation")
+
+    assert "adding a comment" in result["error"]
+    (order,) = result["open_work_orders"]
+    assert order["wo_id"] == "WO-1003"
+    assert order["status"] == "open"
+    assert order["comments"]
+    assert ctx.drafts_made == []
+    assert not ctx.drafts.path.exists()
+
+
+def test_eam_outage_returns_tool_error_instead_of_unknown_engine(ctx, monkeypatch):
+    def unavailable(*args):
+        raise EAMUnavailable("service down")
+
+    monkeypatch.setattr(ctx.eam, "get_asset", unavailable)
+    monkeypatch.setattr(ctx.eam, "list_assets", unavailable)
+    monkeypatch.setattr(ctx.eam, "list_parts", unavailable)
+    expected = {"error": EAM_UNAVAILABLE_MESSAGE}
+    assert tools.fleet_status(ctx) == expected
+    assert tools.engine_detail(ctx, 1) == expected
+    assert tools.work_orders(ctx, 1) == expected
+    assert tools.parts_for(ctx, 1) == expected
+    assert tools.draft_work_order(ctx, 1, "Inspect", "Noise") == expected
+    assert tools.draft_part_request(ctx, "P-HPC-01", 1, "Repair") == expected

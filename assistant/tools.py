@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from functools import wraps
 from math import isfinite
 from pathlib import Path
 
@@ -8,7 +9,15 @@ from assistant import rules
 from assistant.asset_ids import asset_id_for_unit, unit_for_asset_id
 from assistant.drafts import DraftStore, draft_path_for
 from assistant.eam import load_predictions
-from assistant.eam_contract import EAM, Asset, PartRequest, PartRequestLine, WorkOrder
+from assistant.eam_contract import (
+    EAM,
+    EAM_UNAVAILABLE_MESSAGE,
+    Asset,
+    EAMUnavailable,
+    PartRequest,
+    PartRequestLine,
+    WorkOrder,
+)
 from assistant.evidence import capture_evidence
 from assistant.flags import flag_level, t24_band
 from assistant.sqlite_eam import SQLiteEAM
@@ -17,7 +26,7 @@ from loader import load_data
 
 @dataclass
 class FleetContext:
-    db_path: Path
+    db_path: Path | None
     drafts: DraftStore
     eam: EAM
     readings: pd.DataFrame
@@ -28,7 +37,7 @@ class FleetContext:
 
 
 def load_context(
-    db_path: Path,
+    db_path: Path | None,
     data_dir: Path,
     *,
     eam: EAM | None = None,
@@ -36,7 +45,13 @@ def load_context(
 ) -> FleetContext:
     """Load a fleet snapshot with readings through each engine's current cycle."""
     if eam is None:
+        if db_path is None:
+            raise ValueError("A SQLite EAM path is required.")
         eam = SQLiteEAM(db_path)
+    if draft_path is None:
+        if db_path is None:
+            raise ValueError("An assistant database path is required.")
+        draft_path = draft_path_for(db_path)
     readings = load_data(data_dir / "train_FD001.txt")
     predictions = load_predictions(data_dir / "predictions_FD001.csv")
     # A unit belongs to one split even when its current-cycle estimate is missing.
@@ -52,9 +67,7 @@ def load_context(
     cutoff = readings["unit"].map(current_cycles)
     readings = readings.loc[readings["cycle"] <= cutoff].copy()
     bands = {unit: t24_band(readings, unit) for unit in current_cycles}
-    drafts = DraftStore(
-        draft_path if draft_path is not None else draft_path_for(db_path)
-    )
+    drafts = DraftStore(draft_path)
     return FleetContext(
         db_path, drafts, eam, readings, predictions, split_by_unit, bands
     )
@@ -96,6 +109,18 @@ def _engine_status(ctx: FleetContext, asset: Asset, rul: int | None, flag: str) 
     }
 
 
+def _report_eam_unavailable(tool):
+    @wraps(tool)
+    def run(*args, **kwargs):
+        try:
+            return tool(*args, **kwargs)
+        except EAMUnavailable:
+            return {"error": EAM_UNAVAILABLE_MESSAGE}
+
+    return run
+
+
+@_report_eam_unavailable
 def fleet_status(ctx: FleetContext, top_n: int = 5) -> list[dict]:
     """Return up to top_n engines ranked by remaining life, then warning severity.
 
@@ -109,6 +134,7 @@ def fleet_status(ctx: FleetContext, top_n: int = 5) -> list[dict]:
     return [_engine_status(ctx, asset, rul, flag) for asset, rul, flag in ranked]
 
 
+@_report_eam_unavailable
 def engine_detail(ctx: FleetContext, unit: int) -> dict:
     """Return one engine's life estimate, warning, last ten T24 readings, and open order IDs.
 
@@ -129,6 +155,7 @@ def engine_detail(ctx: FleetContext, unit: int) -> dict:
     return detail
 
 
+@_report_eam_unavailable
 def parts_for(ctx: FleetContext, unit: int) -> list[dict] | dict:
     """Return stock, lead times in days, and whether each part needs ordering.
 
@@ -151,6 +178,7 @@ def parts_for(ctx: FleetContext, unit: int) -> list[dict] | dict:
     ]
 
 
+@_report_eam_unavailable
 def work_orders(
     ctx: FleetContext, unit: int, status: str | None = None
 ) -> list[dict] | dict:
@@ -178,6 +206,7 @@ def work_orders(
     ]
 
 
+@_report_eam_unavailable
 def draft_work_order(
     ctx: FleetContext,
     unit: int,
@@ -194,6 +223,12 @@ def draft_work_order(
     asset = ctx.eam.get_asset(asset_id_for_unit(unit))
     if asset is None:
         return _unknown_engine(unit)
+    open_orders = ctx.eam.list_work_orders(asset.asset_id, status="open")
+    if open_orders:
+        return {
+            "error": "This engine already has open work. Suggest adding a comment to an existing work order.",
+            "open_work_orders": [asdict(order) for order in open_orders],
+        }
     code = problem_code.strip() if problem_code else None
     label = " ".join((problem_label or "").casefold().split())
     if not label:
@@ -219,6 +254,7 @@ def draft_work_order(
     return {"draft_id": draft_id}
 
 
+@_report_eam_unavailable
 def draft_part_request(
     ctx: FleetContext, part_id: str, qty: int, reason: str, unit: int | None = None
 ) -> dict:

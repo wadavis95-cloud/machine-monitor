@@ -4,6 +4,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+EAM_UNAVAILABLE_MESSAGE = "EAM unavailable. Try again."
+
+
+class EAMUnavailable(Exception):
+    """A timeout, connection failure, or temporary upstream service failure."""
+
 
 @dataclass
 class PartQuantity:

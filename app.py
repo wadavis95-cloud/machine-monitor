@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 from threading import Lock
 from time import monotonic, perf_counter
@@ -23,15 +24,21 @@ def create_app(
     *,
     assistant_db_path: Path | None = None,
 ):
-    if eam_path is not None:
-        if assistant_db_path is None:
+    adapter_name = os.environ.get("EAM_ADAPTER", "sqlite")
+    if assistant_db_path is None:
+        if eam_path is not None:
             assistant_db_path = draft_path_for(eam_path)
-        elif assistant_db_path.resolve() == eam_path.resolve():
-            raise ValueError("The assistant and EAM databases must use separate files.")
+        elif adapter_name == "hexagon":
+            assistant_db_path = DATA_DIR / "assistant.sqlite"
+    elif eam_path is not None and assistant_db_path.resolve() == eam_path.resolve():
+        raise ValueError("The assistant and EAM databases must use separate files.")
     app = Flask(__name__, static_folder=None)
     app.logger.setLevel(logging.INFO)
     app.config.update(
         EAM_PATH=eam_path,
+        EAM_ADAPTER=adapter_name,
+        HEXAGON_URL=os.environ.get("HEXAGON_URL", "http://127.0.0.1:5003"),
+        HEXAGON_API_KEY=os.environ.get("HEXAGON_API_KEY", "demo-key"),
         ASSISTANT_DB_PATH=assistant_db_path,
         ASSISTANT_DATA_DIR=DATA_DIR,
         CHAT_MODEL_FACTORY=chat_model_factory,

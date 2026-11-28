@@ -4,8 +4,15 @@ from pathlib import Path
 import pandas as pd
 
 
-def connect(db_path: Path, *, timeout: float = 5) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, timeout=timeout)
+def connect(
+    db_path: Path, *, timeout: float = 5, must_exist: bool = False
+) -> sqlite3.Connection:
+    if must_exist:
+        conn = sqlite3.connect(
+            f"{db_path.resolve().as_uri()}?mode=rw", uri=True, timeout=timeout
+        )
+    else:
+        conn = sqlite3.connect(db_path, timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
