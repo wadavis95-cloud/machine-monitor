@@ -1,6 +1,9 @@
 """Map the demo SQLite database to the shared maintenance contract."""
 
+import json
 from contextlib import closing
+from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from sqlite3 import Row
 
@@ -73,8 +76,8 @@ class SQLiteEAM:
         except ValueError:
             return []
         query = """
-            SELECT wo_id, type, status, action, comments, tech, parts_used,
-                   opened, closed, symptom
+            SELECT wo_id, type, status, action, comments, tech, parts_used, parts_json,
+                   opened, closed, symptom, problem_code
             FROM work_orders WHERE unit = ?
         """
         params = (unit,)
@@ -92,9 +95,8 @@ class SQLiteEAM:
                 summary=row["action"],
                 comments=row["comments"],
                 assigned_to=row["tech"],
-                parts=[]
-                if row["parts_used"] is None
-                else [PartQuantity(row["parts_used"], 1)],
+                parts=_work_order_parts(row),
+                problem_code=row["problem_code"],
                 opened=row["opened"],
                 closed=row["closed"],
                 problem_description=row["symptom"],
@@ -102,12 +104,82 @@ class SQLiteEAM:
             for row in rows
         ]
 
-    # Sending and reference lookup are introduced after the draft lifecycle is split.
     def find_by_reference(self, ref: str) -> str | None:
-        raise NotImplementedError
+        with closing(connect(self.db_path, timeout=3)) as conn:
+            row = conn.execute(
+                """SELECT wo_id FROM work_orders WHERE reference = ?
+                   UNION ALL SELECT pr_id FROM part_requests WHERE reference = ?""",
+                (ref, ref),
+            ).fetchone()
+        return None if row is None else row[0]
 
     def submit_work_request(self, order: WorkOrder, ref: str) -> str:
-        raise NotImplementedError
+        unit = unit_for_asset_id(order.asset_id)
+        with closing(connect(self.db_path, timeout=3)) as conn, conn:
+            conn.execute(
+                """INSERT INTO work_orders
+                   (wo_id, unit, type, symptom, action, parts_json, tech, comments, opened,
+                    status, problem_code, reference)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+                   ON CONFLICT(reference) DO NOTHING""",
+                (
+                    order.wo_id,
+                    unit,
+                    order.type,
+                    order.problem_description,
+                    order.summary,
+                    json.dumps([asdict(part) for part in order.parts]),
+                    order.assigned_to,
+                    order.comments,
+                    order.opened or datetime.now(UTC).date().isoformat(),
+                    order.problem_code,
+                    ref,
+                ),
+            )
+            return conn.execute(
+                "SELECT wo_id FROM work_orders WHERE reference = ?", (ref,)
+            ).fetchone()[0]
 
     def submit_part_request(self, request: PartRequest, ref: str) -> str:
-        raise NotImplementedError
+        if not request.lines:
+            raise ValueError("A part request needs at least one line.")
+        unit = (
+            unit_for_asset_id(request.asset_id)
+            if request.asset_id is not None
+            else None
+        )
+        with closing(connect(self.db_path, timeout=3)) as conn, conn:
+            inserted = conn.execute(
+                """INSERT INTO part_requests
+                   (pr_id, unit, wo_id, store, need_by, reason, status, created_by, reference)
+                   VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)
+                   ON CONFLICT(reference) DO NOTHING""",
+                (
+                    request.request_id,
+                    unit,
+                    request.wo_id,
+                    request.store,
+                    request.need_by,
+                    request.reason,
+                    request.requested_by,
+                    ref,
+                ),
+            ).rowcount
+            if inserted:
+                conn.executemany(
+                    """INSERT INTO part_request_lines (pr_id, line_no, part_id, qty, unit)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    [
+                        (request.request_id, number, line.part_id, line.qty, line.unit)
+                        for number, line in enumerate(request.lines, start=1)
+                    ],
+                )
+            return conn.execute(
+                "SELECT pr_id FROM part_requests WHERE reference = ?", (ref,)
+            ).fetchone()[0]
+
+
+def _work_order_parts(row: Row) -> list[PartQuantity]:
+    if row["parts_json"] is not None:
+        return [PartQuantity(**part) for part in json.loads(row["parts_json"])]
+    return [] if row["parts_used"] is None else [PartQuantity(row["parts_used"], 1)]

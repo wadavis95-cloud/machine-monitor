@@ -5,8 +5,6 @@ import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 
-from assistant.eam import list_drafts
-
 
 @pytest.fixture
 def graph_api():
@@ -149,7 +147,7 @@ def test_mermaid_has_model_and_tools_nodes(graph_api, ctx):
 
 
 # A quantity sent as text is saved as the integer 2.
-def test_tool_args_are_coerced(graph_api, ctx, conn):
+def test_tool_args_are_coerced(graph_api, ctx):
     args = {"part_id": "P-HPC-01", "qty": "2", "reason": "Replace worn seal"}
     model = ScriptedModel(
         _tool_call("draft_part_request", args),
@@ -160,6 +158,7 @@ def test_tool_args_are_coerced(graph_api, ctx, conn):
     result = graph_api.run_question(graph, "Draft a request for two seal kits.")
 
     assert result["answer"] == "Part request checked."
-    (draft,) = list_drafts(conn)
-    assert type(draft["qty"]) is int and draft["qty"] == 2
+    (draft,) = ctx.drafts.review_queue()
+    qty = draft["payload"]["lines"][0]["qty"]
+    assert type(qty) is int and qty == 2
     assert result["drafts"] == [draft["id"]]

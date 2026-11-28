@@ -1,3 +1,4 @@
+from itertools import count
 from threading import Event, Thread
 
 import httpx
@@ -121,9 +122,21 @@ def test_unknown_run_404():
 
 # Each question can create three drafts even after the previous run used its budget.
 def test_each_run_gets_its_own_draft_budget(ctx, threads):
+    units = count(1)
+
     def model_factory():
-        args = {"unit": 1, "summary": "Inspect compressor", "reason": "High T24"}
-        calls = [_tool_call("draft_work_order", args, f"call-{i}") for i in range(4)]
+        calls = [
+            _tool_call(
+                "draft_work_order",
+                {
+                    "unit": next(units),
+                    "summary": "Inspect compressor",
+                    "reason": "High T24",
+                },
+                f"call-{i}",
+            )
+            for i in range(4)
+        ]
         return ScriptedModel(*calls, AIMessage(content="Drafts checked."))
 
     client = create_app(
