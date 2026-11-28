@@ -1,9 +1,11 @@
 from contextlib import closing
 from pathlib import Path
+from shutil import copyfile
 
 import pytest
 
-from assistant import eam, seed
+from assistant import eam, seed, tools
+from assistant.drafts import DraftStore
 from loader import load_data
 
 DATA_DIR = Path(__file__).with_name("data")
@@ -81,3 +83,27 @@ def test_work_order_comments_nonempty(eam_conn):
     assert orders
     for wo_id, comments in orders:
         assert comments and comments.strip(), wo_id
+
+
+def test_seed_demo_rebuilds_separate_empty_assistant_db(tmp_path):
+    for filename in ("train_FD001.txt", "predictions_FD001.csv"):
+        copyfile(DATA_DIR / filename, tmp_path / filename)
+    eam_path = tmp_path / "eam.sqlite"
+    draft_path = tmp_path / "assistant.sqlite"
+    seed.seed_demo(tmp_path)
+    ctx = tools.load_context(eam_path, tmp_path)
+    draft_id = tools.draft_work_order(ctx, 1, "Inspect seal", "High T24")["draft_id"]
+    assert DraftStore(draft_path).get(draft_id)["status"] == "draft"
+
+    seed.seed_demo(tmp_path)
+
+    with closing(eam.connect(draft_path)) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM drafts").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM audit").fetchone()[0] == 0
+        assert not conn.execute(
+            "SELECT name FROM sqlite_schema WHERE name = 'machines'"
+        ).fetchall()
+    with closing(eam.connect(eam_path)) as conn:
+        assert not conn.execute(
+            "SELECT name FROM sqlite_schema WHERE name = 'drafts'"
+        ).fetchall()

@@ -130,7 +130,9 @@ def test_work_orders_preserves_legacy_fields_and_values(ctx, conn):
     expected = [
         dict(row)
         for row in conn.execute(
-            "SELECT * FROM work_orders WHERE unit = 2 ORDER BY wo_id"
+            """SELECT wo_id, unit, type, symptom, action, parts_used, tech,
+                      comments, opened, closed, status
+               FROM work_orders WHERE unit = 2 ORDER BY wo_id"""
         )
     ]
 

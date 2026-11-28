@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pandas as pd
 
+from assistant.drafts import build_draft_db, draft_path_for
 from assistant.eam import connect, create_schema, load_predictions
 from loader import load_data
 
@@ -140,7 +141,13 @@ def build_eam(
         fresh_path.replace(db_path)
 
 
+def seed_demo(data_dir: Path = DATA_DIR) -> None:
+    data = load_data(data_dir / "train_FD001.txt")
+    predictions = load_predictions(data_dir / "predictions_FD001.csv")
+    eam_path = data_dir / "eam.sqlite"
+    build_eam(eam_path, data, predictions)
+    build_draft_db(draft_path_for(eam_path))
+
+
 if __name__ == "__main__":
-    data = load_data(DATA_DIR / "train_FD001.txt")
-    predictions = load_predictions(DATA_DIR / "predictions_FD001.csv")
-    build_eam(DATA_DIR / "eam.sqlite", data, predictions)
+    seed_demo()

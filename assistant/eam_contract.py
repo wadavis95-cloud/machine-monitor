@@ -81,6 +81,8 @@ class PartRequest:
     need_by: str | None = None
     lines: list[PartRequestLine] = field(default_factory=list)
     site: str | None = None
+    asset_id: str | None = None
+    reason: str | None = None
 
 
 class EAM(Protocol):

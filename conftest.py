@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from assistant import eam, tools
+from assistant.drafts import build_draft_db, draft_path_for
 from assistant.seed import build_eam
 from loader import load_data
 
@@ -16,6 +17,7 @@ def ctx(tmp_path):
     readings = load_data(DATA_DIR / "train_FD001.txt")
     predictions = eam.load_predictions(DATA_DIR / "predictions_FD001.csv")
     build_eam(db_path, readings, predictions, seed=0)
+    build_draft_db(draft_path_for(db_path))
     return tools.load_context(db_path, DATA_DIR)
 
 

@@ -1,18 +1,15 @@
 from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
-from uuid import uuid4
 
 import pandas as pd
 
 from assistant import rules
 from assistant.asset_ids import asset_id_for_unit, unit_for_asset_id
-from assistant.eam import (
-    load_predictions,
-    save_part_request_draft,
-    save_work_order_draft,
-)
-from assistant.eam_contract import EAM, Asset
+from assistant.drafts import DraftStore, draft_path_for
+from assistant.eam import load_predictions
+from assistant.eam_contract import EAM, Asset, PartRequest, PartRequestLine, WorkOrder
+from assistant.evidence import capture_evidence
 from assistant.flags import flag_level, t24_band
 from assistant.sqlite_eam import SQLiteEAM
 from loader import load_data
@@ -21,6 +18,7 @@ from loader import load_data
 @dataclass
 class FleetContext:
     db_path: Path
+    drafts: DraftStore
     eam: EAM
     readings: pd.DataFrame
     predictions: dict
@@ -30,7 +28,11 @@ class FleetContext:
 
 
 def load_context(
-    db_path: Path, data_dir: Path, *, eam: EAM | None = None
+    db_path: Path,
+    data_dir: Path,
+    *,
+    eam: EAM | None = None,
+    draft_path: Path | None = None,
 ) -> FleetContext:
     """Load a fleet snapshot with readings through each engine's current cycle."""
     if eam is None:
@@ -50,7 +52,12 @@ def load_context(
     cutoff = readings["unit"].map(current_cycles)
     readings = readings.loc[readings["cycle"] <= cutoff].copy()
     bands = {unit: t24_band(readings, unit) for unit in current_cycles}
-    return FleetContext(db_path, eam, readings, predictions, split_by_unit, bands)
+    drafts = DraftStore(
+        draft_path if draft_path is not None else draft_path_for(db_path)
+    )
+    return FleetContext(
+        db_path, drafts, eam, readings, predictions, split_by_unit, bands
+    )
 
 
 def _unknown_engine(unit):
@@ -171,29 +178,78 @@ def work_orders(
     ]
 
 
-def draft_work_order(ctx: FleetContext, unit: int, summary: str, reason: str) -> dict:
-    """Save a work order draft for a person to review."""
+def draft_work_order(
+    ctx: FleetContext,
+    unit: int,
+    summary: str,
+    reason: str,
+    problem_label: str | None = None,
+    problem_code: str | None = None,
+) -> dict:
+    """Save a work order draft for review. Give a short problem label such as seal or bearing."""
     error = rules.draft_error(len(ctx.drafts_made))
     if error is not None:
         return {"error": error}
 
-    draft_id = f"WO-{uuid4().hex}"
-    if not save_work_order_draft(ctx.db_path, draft_id, unit, summary, reason):
+    asset = ctx.eam.get_asset(asset_id_for_unit(unit))
+    if asset is None:
         return _unknown_engine(unit)
-
-    ctx.drafts_made.append(draft_id)
+    code = problem_code.strip() if problem_code else None
+    label = " ".join((problem_label or "").casefold().split())
+    if not label:
+        label = " ".join(summary.casefold().split())
+    problem_key = f"code:{code.casefold()}" if code else f"label:{label}"
+    order = WorkOrder(
+        wo_id="",
+        asset_id=asset.asset_id,
+        type="corrective",
+        status="draft",
+        summary=summary,
+        comments=reason,
+        requested_by="assistant",
+        problem_code=code or None,
+        site=asset.site,
+    )
+    evidence = capture_evidence(ctx.eam, ctx.predictions, asset.asset_id)
+    draft_id = ctx.drafts.save(
+        order, problem_key, {**evidence, "created_by": "assistant"}
+    )
+    if draft_id not in ctx.drafts_made:
+        ctx.drafts_made.append(draft_id)
     return {"draft_id": draft_id}
 
 
-def draft_part_request(ctx: FleetContext, part_id: str, qty: int, reason: str) -> dict:
-    """Save a part request draft for a person to review."""
+def draft_part_request(
+    ctx: FleetContext, part_id: str, qty: int, reason: str, unit: int | None = None
+) -> dict:
+    """Save a part request draft for review. Include the engine unit when known."""
     error = rules.draft_error(len(ctx.drafts_made), qty)
     if error is not None:
         return {"error": error}
 
-    draft_id = f"PR-{uuid4().hex}"
-    if not save_part_request_draft(ctx.db_path, draft_id, part_id, qty, reason):
+    asset = ctx.eam.get_asset(asset_id_for_unit(unit)) if unit is not None else None
+    if unit is not None and asset is None:
+        return _unknown_engine(unit)
+    part = next(
+        (part for part in ctx.eam.list_parts() if part.part_id == part_id), None
+    )
+    if part is None:
         return {"error": f"Unknown part {part_id}."}
 
-    ctx.drafts_made.append(draft_id)
+    request = PartRequest(
+        request_id="",
+        requested_by="assistant",
+        store=part.stock[0].store if part.stock else "main",
+        status="draft",
+        lines=[PartRequestLine(part_id, qty, part.unit_of_measure)],
+        site=asset.site if asset else None,
+        asset_id=asset.asset_id if asset else None,
+        reason=reason,
+    )
+    evidence = capture_evidence(ctx.eam, ctx.predictions, request.asset_id, {part_id})
+    draft_id = ctx.drafts.save(
+        request, part_id, {**evidence, "created_by": "assistant"}
+    )
+    if draft_id not in ctx.drafts_made:
+        ctx.drafts_made.append(draft_id)
     return {"draft_id": draft_id}

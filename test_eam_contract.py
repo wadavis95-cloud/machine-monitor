@@ -3,7 +3,16 @@ from contextlib import closing
 import pytest
 
 from assistant.eam import connect, create_schema
-from assistant.eam_contract import EAM, Asset, Part, PartQuantity, StoreStock, WorkOrder
+from assistant.eam_contract import (
+    EAM,
+    Asset,
+    Part,
+    PartQuantity,
+    PartRequest,
+    PartRequestLine,
+    StoreStock,
+    WorkOrder,
+)
 from assistant.sqlite_eam import SQLiteEAM
 
 
@@ -79,3 +88,27 @@ def test_work_orders_filter_by_asset_and_status(eam_adapter):
         orders["WO-2"]
     ]
     assert not eam_adapter.list_work_orders("ENG-001", status="draft")
+
+
+def test_submissions_can_be_found_and_replayed_by_reference(eam_adapter):
+    order = WorkOrder(
+        "WO-NEW", "ENG-001", "corrective", "draft", summary="Inspect valve"
+    )
+    request = PartRequest(
+        "PR-NEW",
+        "assistant",
+        "main",
+        "draft",
+        lines=[PartRequestLine("P-1", 2, "each")],
+    )
+    assert eam_adapter.find_by_reference("WO-REF") is None
+    assert eam_adapter.find_by_reference("PR-REF") is None
+    order_id = eam_adapter.submit_work_request(order, "WO-REF")
+    request_id = eam_adapter.submit_part_request(request, "PR-REF")
+
+    assert eam_adapter.find_by_reference("WO-REF") == order_id
+    assert eam_adapter.find_by_reference("PR-REF") == request_id
+    assert eam_adapter.submit_work_request(order, "WO-REF") == order_id
+    assert eam_adapter.submit_part_request(request, "PR-REF") == request_id
+    orders = eam_adapter.list_work_orders("ENG-001", status="open")
+    assert [item.summary for item in orders].count("Inspect valve") == 1

@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 from flask import Flask, abort, g, jsonify, render_template, request
 
+from assistant.drafts import draft_path_for
 from assistant.eam import load_predictions
 from assistant.flags import t24_band
 from assistant.routes import assistant_routes
@@ -19,11 +20,19 @@ def create_app(
     predictions_path: Path | None = DATA_DIR / "predictions_FD001.csv",
     eam_path: Path | None = DATA_DIR / "eam.sqlite",
     chat_model_factory=None,
+    *,
+    assistant_db_path: Path | None = None,
 ):
+    if eam_path is not None:
+        if assistant_db_path is None:
+            assistant_db_path = draft_path_for(eam_path)
+        elif assistant_db_path.resolve() == eam_path.resolve():
+            raise ValueError("The assistant and EAM databases must use separate files.")
     app = Flask(__name__, static_folder=None)
     app.logger.setLevel(logging.INFO)
     app.config.update(
         EAM_PATH=eam_path,
+        ASSISTANT_DB_PATH=assistant_db_path,
         ASSISTANT_DATA_DIR=DATA_DIR,
         CHAT_MODEL_FACTORY=chat_model_factory,
     )
