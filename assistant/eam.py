@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pandas as pd
@@ -50,6 +51,46 @@ def create_schema(conn: sqlite3.Connection) -> None:
             created_by TEXT NOT NULL
         );
         """)
+
+
+def save_work_order_draft(
+    db_path: Path, draft_id: str, unit: int, summary: str, reason: str
+) -> bool:
+    """Store a draft in the legacy queue if the engine exists."""
+    with closing(connect(db_path)) as conn, conn:
+        if (
+            conn.execute("SELECT 1 FROM machines WHERE unit = ?", (unit,)).fetchone()
+            is None
+        ):
+            return False
+        conn.execute(
+            """
+            INSERT INTO work_orders (wo_id, unit, type, action, comments, status)
+            VALUES (?, ?, 'corrective', ?, ?, 'draft')
+            """,
+            (draft_id, unit, summary, reason),
+        )
+    return True
+
+
+def save_part_request_draft(
+    db_path: Path, draft_id: str, part_id: str, qty: int, reason: str
+) -> bool:
+    """Store a draft in the legacy queue if the part exists."""
+    with closing(connect(db_path)) as conn, conn:
+        if (
+            conn.execute("SELECT 1 FROM parts WHERE part_id = ?", (part_id,)).fetchone()
+            is None
+        ):
+            return False
+        conn.execute(
+            """
+            INSERT INTO part_requests (pr_id, part_id, qty, reason, status, created_by)
+            VALUES (?, ?, ?, ?, 'draft', 'assistant')
+            """,
+            (draft_id, part_id, qty, reason),
+        )
+    return True
 
 
 def list_drafts(conn: sqlite3.Connection) -> list[dict]:

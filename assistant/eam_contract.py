@@ -58,6 +58,7 @@ class WorkOrder:
     cause_code: str | None = None
     action_code: str | None = None
     site: str | None = None
+    problem_description: str | None = None
 
 
 @dataclass

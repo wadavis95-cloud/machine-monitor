@@ -1,12 +1,15 @@
 from types import SimpleNamespace
 
 from assistant import rules
+from assistant.asset_ids import asset_id_for_unit
 from assistant.eam_contract import Asset, Part, StoreStock
 
 
 def test_rank_fleet_preserves_input_order_for_ties_and_puts_missing_rul_last():
     assets = [
-        Asset(f"ENG-{number:03d}", f"Engine {number}", "Line 1", current_cycle=100)
+        Asset(
+            asset_id_for_unit(number), f"Engine {number}", "Line 1", current_cycle=100
+        )
         for number in (2, 1, 3, 4)
     ]
     eam = SimpleNamespace(list_assets=lambda: assets)
