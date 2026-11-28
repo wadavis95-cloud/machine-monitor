@@ -1,5 +1,6 @@
 from contextlib import closing
 
+import httpx
 import pytest
 
 from assistant.eam import connect, create_schema
@@ -13,7 +14,10 @@ from assistant.eam_contract import (
     StoreStock,
     WorkOrder,
 )
+from assistant.hexagon_eam import HexagonEAM
 from assistant.sqlite_eam import SQLiteEAM
+from mock_hexagon import app as mock_app
+from mock_hexagon import fixtures as mock_fixtures
 
 
 def sqlite_adapter(tmp_path) -> EAM:
@@ -40,10 +44,35 @@ def sqlite_adapter(tmp_path) -> EAM:
     return SQLiteEAM(db_path)
 
 
-# Add another adapter factory backed by the same logical records here.
-@pytest.fixture(params=[pytest.param(sqlite_adapter, id="sqlite")])
-def eam_adapter(request, tmp_path) -> EAM:
-    return request.param(tmp_path)
+@pytest.fixture(params=["sqlite", "hexagon"])
+def eam_adapter(request, tmp_path, monkeypatch) -> EAM:
+    sqlite = sqlite_adapter(tmp_path)
+    if request.param == "sqlite":
+        return sqlite
+
+    # Use the same small logical dataset in the real mock routes.
+    def fixtures():
+        assets = sqlite.list_assets()
+        return (
+            {asset.asset_id: mock_fixtures._asset_record(asset) for asset in assets},
+            {
+                part.part_id: mock_fixtures._part_record(part)
+                for part in sqlite.list_parts()
+            },
+            {
+                order.wo_id: mock_fixtures._order_record(order)
+                for asset in assets
+                for order in sqlite.list_work_orders(asset.asset_id)
+            },
+        )
+
+    monkeypatch.setattr(mock_app, "seed_fixtures", fixtures)
+    mock = mock_app.create_app(
+        api_key="test-key", mode="normal", ignore_idempotency=False
+    )
+    return HexagonEAM(
+        "http://mock", "test-key", transport=httpx.WSGITransport(app=mock)
+    )
 
 
 def test_asset_lookup_matches_asset_listing(eam_adapter):

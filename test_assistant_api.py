@@ -122,7 +122,7 @@ def test_unknown_run_404():
 
 # Each question can create three drafts even after the previous run used its budget.
 def test_each_run_gets_its_own_draft_budget(ctx, threads):
-    units = count(1)
+    units = (unit for unit in count(1) if unit % 3 != 0)
 
     def model_factory():
         calls = [

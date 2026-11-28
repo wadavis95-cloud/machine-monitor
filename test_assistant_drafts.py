@@ -9,6 +9,7 @@ import pytest
 from app import create_app
 from assistant import drafts, routes, tools
 from assistant.eam import connect
+from assistant.eam_contract import EAMUnavailable
 
 
 @pytest.fixture
@@ -168,7 +169,7 @@ def test_overlapping_approvals_send_once(ctx, work_order_id, monkeypatch):
         return "WO-EXTERNAL"
 
     monkeypatch.setattr(
-        routes, "SQLiteEAM", lambda path: SimpleNamespace(submit_work_request=send)
+        routes, "create_eam", lambda path: SimpleNamespace(submit_work_request=send)
     )
     url = f"/api/drafts/{work_order_id}/approve"
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -195,14 +196,14 @@ def test_lost_reply_retry_uses_reference_before_sending(
         assert order.wo_id == ref
         # This fake creates a new record on every send.
         created[ref] = f"external-{len(calls)}"
-        raise TimeoutError("response lost")
+        raise EAMUnavailable("response lost")
 
     def lookup(ref):
         calls.append(("lookup", ref))
         return created.get(ref)
 
     fake = SimpleNamespace(submit_work_request=send, find_by_reference=lookup)
-    monkeypatch.setattr(routes, "SQLiteEAM", lambda path: fake)
+    monkeypatch.setattr(routes, "create_eam", lambda path: fake)
     client = _draft_client(ctx.db_path)
     base = f"/api/drafts/{work_order_id}"
     assert client.post(base + "/approve").get_json()["status"] == "approved"
@@ -224,11 +225,11 @@ def test_three_failures_mark_send_failed_and_lookup_failure_never_submits(
 
     def fail(*args):
         calls.append("submit")
-        raise ConnectionError("EAM unavailable")
+        raise EAMUnavailable("EAM unavailable")
 
     def lookup(ref):
         calls.append("lookup")
-        raise ConnectionError("EAM unavailable")
+        raise EAMUnavailable("EAM unavailable")
 
     fake = SimpleNamespace(submit_work_request=fail, find_by_reference=lookup)
     assert ctx.drafts.send(work_order_id, "Morgan", fake) == "approved"
@@ -385,3 +386,22 @@ def test_drafts_api_503_when_database_missing(tmp_path):
         assert response.status_code == 503
         assert response.get_json() == {"error": "Run make seed first."}
     assert not db_path.exists()
+
+
+def test_programming_error_surfaces_through_draft_route(
+    ctx, work_order_id, monkeypatch
+):
+    def broken_send(order, ref):
+        raise KeyError("missing expected payload field")
+
+    monkeypatch.setattr(
+        routes,
+        "create_eam",
+        lambda config: SimpleNamespace(submit_work_request=broken_send),
+    )
+    with pytest.raises(KeyError, match="missing expected payload field"):
+        _draft_client(ctx.db_path).post(f"/api/drafts/{work_order_id}/approve")
+
+    draft = ctx.drafts.get(work_order_id)
+    assert draft["status"] == "sending"
+    assert draft["attempts"] == 0

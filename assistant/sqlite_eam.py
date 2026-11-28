@@ -1,7 +1,8 @@
 """Map the demo SQLite database to the shared maintenance contract."""
 
 import json
-from contextlib import closing
+import sqlite3
+from contextlib import closing, contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from assistant.asset_ids import asset_id_for_unit, unit_for_asset_id
 from assistant.eam import connect
 from assistant.eam_contract import (
     Asset,
+    EAMUnavailable,
     Part,
     PartQuantity,
     PartRequest,
@@ -23,6 +25,23 @@ class SQLiteEAM:
     def __init__(self, db_path: Path):
         self.db_path = db_path
 
+    @contextmanager
+    def _connection(self):
+        try:
+            with closing(connect(self.db_path, timeout=3, must_exist=True)) as conn:
+                yield conn
+        except sqlite3.OperationalError as error:
+            # The low byte identifies the primary SQLite error, even for extended codes.
+            code = getattr(error, "sqlite_errorcode", 0) & 0xFF
+            if code in (
+                sqlite3.SQLITE_BUSY,
+                sqlite3.SQLITE_LOCKED,
+                sqlite3.SQLITE_CANTOPEN,
+                sqlite3.SQLITE_IOERR,
+            ):
+                raise EAMUnavailable("SQLite EAM is unavailable.") from error
+            raise
+
     @staticmethod
     def _asset(row: Row) -> Asset:
         return Asset(
@@ -33,7 +52,7 @@ class SQLiteEAM:
         )
 
     def list_assets(self) -> list[Asset]:
-        with closing(connect(self.db_path)) as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 "SELECT unit, line, current_cycle FROM machines ORDER BY unit"
             )
@@ -44,7 +63,7 @@ class SQLiteEAM:
             unit = unit_for_asset_id(asset_id)
         except ValueError:
             return None
-        with closing(connect(self.db_path)) as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 "SELECT unit, line, current_cycle FROM machines WHERE unit = ?",
                 (unit,),
@@ -52,7 +71,7 @@ class SQLiteEAM:
         return None if row is None else self._asset(row)
 
     def list_parts(self) -> list[Part]:
-        with closing(connect(self.db_path)) as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 "SELECT part_id, name, on_hand, lead_time_days, unit_cost FROM parts ORDER BY part_id"
             ).fetchall()
@@ -84,7 +103,7 @@ class SQLiteEAM:
         if status is not None:
             query += " AND status = ?"
             params += (status,)
-        with closing(connect(self.db_path)) as conn:
+        with self._connection() as conn:
             rows = conn.execute(query + " ORDER BY wo_id", params).fetchall()
         return [
             WorkOrder(
@@ -105,7 +124,7 @@ class SQLiteEAM:
         ]
 
     def find_by_reference(self, ref: str) -> str | None:
-        with closing(connect(self.db_path, timeout=3)) as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 """SELECT wo_id FROM work_orders WHERE reference = ?
                    UNION ALL SELECT pr_id FROM part_requests WHERE reference = ?""",
@@ -115,7 +134,7 @@ class SQLiteEAM:
 
     def submit_work_request(self, order: WorkOrder, ref: str) -> str:
         unit = unit_for_asset_id(order.asset_id)
-        with closing(connect(self.db_path, timeout=3)) as conn, conn:
+        with self._connection() as conn, conn:
             conn.execute(
                 """INSERT INTO work_orders
                    (wo_id, unit, type, symptom, action, parts_json, tech, comments, opened,
@@ -148,7 +167,7 @@ class SQLiteEAM:
             if request.asset_id is not None
             else None
         )
-        with closing(connect(self.db_path, timeout=3)) as conn, conn:
+        with self._connection() as conn, conn:
             inserted = conn.execute(
                 """INSERT INTO part_requests
                    (pr_id, unit, wo_id, store, need_by, reason, status, created_by, reference)

@@ -12,6 +12,7 @@ from uuid import uuid4
 from assistant.eam import connect
 from assistant.eam_contract import (
     EAM,
+    EAMUnavailable,
     PartQuantity,
     PartRequest,
     PartRequestLine,
@@ -110,6 +111,14 @@ def _decode(row) -> dict:
     return draft
 
 
+class DraftNotFound(KeyError):
+    """The requested draft ID is absent."""
+
+
+class DraftConflict(ValueError):
+    """The action is invalid in the draft's current state."""
+
+
 class DraftStore:
     def __init__(self, path: Path):
         self.path = path
@@ -173,7 +182,7 @@ class DraftStore:
                 "SELECT * FROM drafts WHERE id = ?", (draft_id,)
             ).fetchone()
         if row is None:
-            raise KeyError(draft_id)
+            raise DraftNotFound(draft_id)
         return _decode(row)
 
     def reject(self, draft_id: str, actor: str) -> str:
@@ -233,7 +242,7 @@ class DraftStore:
                 external_id = _submit(eam, draft)
             if not external_id:
                 raise ValueError("EAM did not return a record ID")
-        except Exception:
+        except EAMUnavailable:
             external_id = None
             logger.exception("EAM send failed for draft %s", draft_id)
 
@@ -262,13 +271,13 @@ class DraftStore:
         return status
 
 
-def _decision_error(conn, draft_id: str, message: str) -> KeyError | ValueError:
+def _decision_error(conn, draft_id: str, message: str) -> DraftNotFound | DraftConflict:
     if (
         conn.execute("SELECT 1 FROM drafts WHERE id = ?", (draft_id,)).fetchone()
         is None
     ):
-        return KeyError(draft_id)
-    return ValueError(f"{draft_id} is {message}.")
+        return DraftNotFound(draft_id)
+    return DraftConflict(f"{draft_id} is {message}.")
 
 
 def _submit(eam: EAM, draft: dict) -> str:

@@ -8,12 +8,13 @@ from langchain_ollama import ChatOllama
 from ollama import ResponseError
 
 from assistant.asset_ids import unit_for_asset_id
-from assistant.drafts import DraftStore
+from assistant.drafts import DraftConflict, DraftNotFound, DraftStore
 from assistant.eam import load_predictions
+from assistant.eam_contract import EAM_UNAVAILABLE_MESSAGE, EAMUnavailable
+from assistant.eam_factory import create_eam
 from assistant.evidence import recheck_evidence
 from assistant.graph import build_graph, make_tools, mermaid, run_question
 from assistant.guardrails import finalize_answer
-from assistant.sqlite_eam import SQLiteEAM
 from assistant.tools import load_context
 
 assistant_routes = Blueprint("assistant", __name__)
@@ -38,14 +39,7 @@ def _run_in_background(app, run, lock, question):
         with lock:
             run["steps"].append(step)
 
-    db_path = app.config["EAM_PATH"]
-    draft_path = app.config["ASSISTANT_DB_PATH"]
-    if (
-        db_path is None
-        or not db_path.exists()
-        or draft_path is None
-        or not draft_path.exists()
-    ):
+    if not _databases_ready(app.config):
         with lock:
             run.update(status="error", error="Run make seed first.")
         return
@@ -53,7 +47,10 @@ def _run_in_background(app, run, lock, question):
     try:
         # A fresh context starts this question with an empty draft list.
         ctx = load_context(
-            db_path, app.config["ASSISTANT_DATA_DIR"], draft_path=draft_path
+            app.config["EAM_PATH"],
+            app.config["ASSISTANT_DATA_DIR"],
+            eam=create_eam(app.config),
+            draft_path=app.config["ASSISTANT_DB_PATH"],
         )
         tools = make_tools(ctx)
         factory = app.config["CHAT_MODEL_FACTORY"] or chat_model_factory
@@ -66,6 +63,9 @@ def _run_in_background(app, run, lock, question):
         result["answer"] = finalize_answer(
             result["answer"], result["tool_calls"], result["drafts"]
         )
+    except EAMUnavailable:
+        with lock:
+            run.update(status="error", error=EAM_UNAVAILABLE_MESSAGE)
     except Exception as error:
         if isinstance(error, (ConnectError, ConnectionError)) or (
             isinstance(error, ResponseError) and error.status_code == 404
@@ -119,17 +119,21 @@ def get_assistant_run(run_id):
     return response
 
 
+def _databases_ready(config):
+    draft_path = config["ASSISTANT_DB_PATH"]
+    if draft_path is None or not draft_path.is_file():
+        return False
+    eam_path = config["EAM_PATH"]
+    return config["EAM_ADAPTER"] != "sqlite" or (
+        eam_path is not None and eam_path.is_file()
+    )
+
+
 def _draft_dependencies():
-    eam_path = current_app.config["EAM_PATH"]
-    draft_path = current_app.config["ASSISTANT_DB_PATH"]
-    if (
-        eam_path is None
-        or draft_path is None
-        or not eam_path.exists()
-        or not draft_path.exists()
-    ):
+    config = current_app.config
+    if not _databases_ready(config):
         return None
-    return DraftStore(draft_path), SQLiteEAM(eam_path)
+    return DraftStore(config["ASSISTANT_DB_PATH"]), create_eam(config)
 
 
 def _review_payload(draft, eam, predictions):
@@ -149,7 +153,10 @@ def _review_payload(draft, eam, predictions):
             "sending_since",
         )
     }
-    record["evidence_changes"] = recheck_evidence(draft, eam, predictions)
+    try:
+        record["evidence_changes"] = recheck_evidence(draft, eam, predictions)
+    except EAMUnavailable:
+        record["evidence_error"] = EAM_UNAVAILABLE_MESSAGE
     if draft["kind"] == "work_order":
         record.update(
             unit=unit_for_asset_id(payload["asset_id"]), summary=payload["summary"]
@@ -177,7 +184,7 @@ def get_drafts(draft_id):
         )
     try:
         draft = store.get(draft_id)
-    except KeyError:
+    except DraftNotFound:
         return jsonify(error="Draft not found."), 404
     return jsonify(_review_payload(draft, eam, predictions))
 
@@ -199,9 +206,9 @@ def post_draft_decision(draft_id, action):
             status = store.reject(draft_id, actor.strip())
         else:
             status = store.send(draft_id, actor.strip(), eam, retry=action == "retry")
-    except KeyError:
+    except DraftNotFound:
         return jsonify(error="Draft not found."), 404
-    except ValueError as error:
+    except DraftConflict as error:
         return jsonify(error=str(error)), 409
     if action == "approve" and status == "sent":
         status = "open" if draft_id.startswith("WO-") else "submitted"
