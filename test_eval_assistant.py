@@ -182,3 +182,30 @@ def test_mock_server_uses_a_free_port_and_cleans_up_on_failure(monkeypatch):
         assert eam.base_url == "http://127.0.0.1:34567"
         raise RuntimeError("case failed")
     assert stop.is_set() and closed.is_set()
+
+
+def test_adapter_eval_records_model_timeout_and_continues(ctx):
+    class SlowOnce(EvalModel):
+        timed_out = False
+
+        def invoke(self, messages):
+            if not self.timed_out:
+                self.timed_out = True
+                raise httpx.ReadTimeout("No response from model")
+            return super().invoke(messages)
+
+    items = [_item(ctx, "fake-part"), _item(ctx, "rank-1")]
+    expected = {"fake-part": [], "rank-1": items[1]["expected_facts"](ctx)}
+    model = SlowOnce(_tool_call(), AIMessage(content=expected["rank-1"][0]))
+
+    lines = eval_assistant._run_adapter("SQLite", ctx.db_path, items, expected, model)
+
+    assert any(line.startswith("| fake-part | fail |") for line in lines)
+    assert any(
+        line.startswith(
+            "| rank-1 | pass | pass | pass | pass | pass | pass | pass | pass |"
+        )
+        for line in lines
+    )
+    assert "- **Error** The local model timed out after 45 seconds. Try again." in lines
+    assert model.replies == []

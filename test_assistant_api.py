@@ -168,3 +168,65 @@ def test_dashboard_links_to_assistant():
         response = client.get(path)
         assert response.status_code == 200
         assert b'href="/assistant"' in response.data
+
+
+def test_slow_model_times_out_and_late_tool_call_is_discarded(
+    ctx, threads, monkeypatch
+):
+    from assistant import graph
+
+    monkeypatch.setattr(graph, "MODEL_CALL_TIMEOUT_SECONDS", 0.05)
+    model_started = Event()
+    release_model = Event()
+    model_returned = Event()
+
+    class SlowModel:
+        def invoke(self, messages):
+            model_started.set()
+            assert release_model.wait(timeout=5)
+            model_returned.set()
+            return _tool_call(
+                "draft_part_request",
+                {"part_id": "P-HPC-01", "qty": 1, "reason": "Late reply"},
+            )
+
+    client = create_app(
+        eam_path=ctx.db_path, chat_model_factory=SlowModel
+    ).test_client()
+    try:
+        url = _start_run(client, "Draft a request for a part that does not exist.")
+        assert model_started.wait(timeout=5)
+        result = _finished_run(client, url, threads[-1])
+        assert not model_returned.is_set()
+        assert result["status"] == "error"
+        assert (
+            result["error"]
+            == "The local model timed out after 0.05 seconds. Try again."
+        )
+        assert result["answer"] is None
+        assert result["tool_calls"] == []
+        assert [step["kind"] for step in result["steps"]] == ["model"]
+    finally:
+        release_model.set()
+    assert model_returned.wait(timeout=5)
+    assert client.get(url).get_json() == result
+    assert ctx.drafts.review_queue() == []
+
+
+def test_model_factory_sets_generation_limit_and_network_timeout(monkeypatch):
+    config = {}
+    monkeypatch.delenv("ASSISTANT_MODEL", raising=False)
+
+    def make_model(**kwargs):
+        config.update(kwargs)
+
+    monkeypatch.setattr(routes, "ChatOllama", make_model)
+    routes.chat_model_factory()
+
+    assert config == {
+        "model": "qwen3:8b",
+        "temperature": 0,
+        "num_predict": 1024,
+        "reasoning": False,
+        "client_kwargs": {"timeout": 45},
+    }
