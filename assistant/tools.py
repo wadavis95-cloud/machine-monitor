@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from functools import wraps
+from html import escape
 from math import isfinite
 from pathlib import Path
 
@@ -178,6 +179,12 @@ def parts_for(ctx: FleetContext, unit: int) -> list[dict] | dict:
     ]
 
 
+def _fenced_comment(comment: str | None) -> str | None:
+    if comment is None:
+        return None
+    return f"<untrusted_eam_comment>\n{escape(comment, quote=False)}\n</untrusted_eam_comment>"
+
+
 @_report_eam_unavailable
 def work_orders(
     ctx: FleetContext, unit: int, status: str | None = None
@@ -197,7 +204,7 @@ def work_orders(
             "action": order.summary,
             "parts_used": order.parts[0].part_id if order.parts else None,
             "tech": order.assigned_to,
-            "comments": order.comments,
+            "comments": _fenced_comment(order.comments),
             "opened": order.opened,
             "closed": order.closed,
             "status": order.status,
@@ -227,7 +234,10 @@ def draft_work_order(
     if open_orders:
         return {
             "error": "This engine already has open work. Suggest adding a comment to an existing work order.",
-            "open_work_orders": [asdict(order) for order in open_orders],
+            "open_work_orders": [
+                {**asdict(order), "comments": _fenced_comment(order.comments)}
+                for order in open_orders
+            ],
         }
     code = problem_code.strip() if problem_code else None
     label = " ".join((problem_label or "").casefold().split())

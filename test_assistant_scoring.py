@@ -1,10 +1,14 @@
 import json
+from contextlib import contextmanager
 
+import httpx
 import pytest
 from langchain_core.messages import AIMessage
 
+from assistant.hexagon_eam import HexagonEAM
 from assistant.scoring import chain_ok, drafts_ok, facts_ok, invented_ids, tools_ok
 from evals.assistant_golden import golden_items
+from mock_hexagon.app import create_app as create_mock_app
 from scripts import eval_assistant
 from test_assistant_graph import ScriptedModel, _tool_call
 
@@ -176,12 +180,68 @@ def test_drafts_ok_checks_presence_against_intent():
     assert not drafts_ok(["WO-101"], False)
 
 
+def test_sources_ok_accepts_live_rank_one_answer_with_tool_suggestion():
+    answer = (
+        "The engine most at risk is **unit 27** with a remaining life (RUL) of 6 cycles "
+        'and a "red" warning flag. It has the shortest RUL among the top 3 high-risk engines. '
+        "For detailed diagnostics, check `engine_detail` for unit 27."
+    )
+    assert eval_assistant.sources_ok(
+        answer, ["fleet_status"], {"fleet_status", "engine_detail"}
+    )
+
+
+def test_sources_ok_accepts_live_rank_three_answer_with_tool_suggestion():
+    answer = """The top 3 engines with red flags (highest risk) for the next PM are:
+
+1. **Unit 27**
+   - RUL: 6 cycles
+   - T24 recent: Stable around 643.3-644.0
+   - Open work order: WO-1027
+
+2. **Unit 39**
+   - RUL: 11 cycles
+   - T24 recent: Stable around 643.2-643.9
+   - Open work order: WO-1039
+
+3. **Unit 74**
+   - RUL: 11 cycles
+   - T24 recent: Stable around 642.3-643.6
+   - No open work orders
+
+**Next steps**:
+- Prioritize units with lower RUL (e.g., Unit 27).
+- Check if parts are needed for these units using `parts_for`.
+- Review active work orders (WO-1027, WO-1039) fo…"""
+    assert eval_assistant.sources_ok(
+        answer,
+        ["fleet_status", "engine_detail"],
+        {"fleet_status", "engine_detail", "parts_for"},
+    )
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "Sources: fleet_status, engine_detail",
+        "**Sources:** `engine_detail`",
+        "Check [engine_detail] for details.",
+    ],
+)
+def test_sources_ok_rejects_citations_for_uncalled_tools(citation):
+    assert not eval_assistant.sources_ok(
+        f"Engine 27 is most at risk.\n{citation}",
+        ["fleet_status"],
+        {"fleet_status", "engine_detail"},
+    )
+
+
 def test_eval_report_shows_evidence_only_for_failures(tmp_path, monkeypatch):
     answer = "Engine 3 and Engine 999.\n" + "x" * 600 + " yellow"
 
     call = _tool_call(args={"top_n": 100})
     model = EvalModel(
-        call, AIMessage(content=answer), call, AIMessage(content="Engine 3")
+        *(call, AIMessage(content=answer), call, AIMessage(content="Engine 3")) * 2
     )
     items = [
         {
@@ -205,13 +265,48 @@ def test_eval_report_shows_evidence_only_for_failures(tmp_path, monkeypatch):
     monkeypatch.setattr(eval_assistant, "chat_model_factory", lambda: model)
     monkeypatch.setattr(eval_assistant, "golden_items", lambda ctx: items)
 
+    lifecycle = []
+
+    @contextmanager
+    def in_process_mock():
+        lifecycle.append("start")
+        mock = create_mock_app(
+            api_key="test-key", mode="normal", ignore_idempotency=False
+        )
+        try:
+            yield HexagonEAM(
+                "http://mock", "test-key", transport=httpx.WSGITransport(app=mock)
+            )
+        finally:
+            lifecycle.append("stop")
+
+    monkeypatch.setattr(eval_assistant, "serve_mock", in_process_mock)
+    ticks = iter([0, 1, 3, 4, 9, 10, 20, 21, 22, 23, 27, 31])
+    monkeypatch.setattr(eval_assistant, "perf_counter", lambda: next(ticks))
     eval_assistant.main()
 
+    assert lifecycle == ["start", "stop"]
+    assert model.replies == []
     markdown = report.read_text(encoding="utf-8")
-    assert "| PM label | Chain | Overall |" in markdown
-    assert "| Total | 2/2 | 1/2 | 1/2 | 2/2 | 2/2 | 2/2 | 1/2 | 1/2 |" in markdown
-    assert "## Failures\n\n### failed-case" in markdown
-    assert "### passed-case" not in markdown
+    assert "| PM label | Chain | Overall | Duration (s) |" in markdown
+    assert markdown.index("## SQLite") < markdown.index("## Hexagon")
+    sqlite, hexagon = markdown.split("## Hexagon")
+    totals = "| Total | 2/2 | 1/2 | 1/2 | 2/2 | 2/2 | 2/2 | 1/2 | 1/2 |"
+    for section, failed, passed, duration in (
+        (sqlite, "2.00", "5.00", "10.00"),
+        (hexagon, "1.00", "4.00", "11.00"),
+    ):
+        assert (
+            f"| failed-case | pass | fail | fail | pass | pass | pass | fail | fail | {failed} |"
+            in section
+        )
+        assert (
+            f"| passed-case | pass | pass | pass | pass | pass | pass | pass | pass | {passed} |"
+            in section
+        )
+        assert f"{totals} {duration} |" in section
+    assert markdown.count("### Failures\n\n#### failed-case") == 2
+    assert "#### passed-case" not in markdown
     assert "**Question** Which engines should we inspect?" in markdown
     assert "**Expected facts** engine 3, engine 4, yellow" in markdown
     assert "**Missing facts** engine 4\n" in markdown
@@ -219,3 +314,49 @@ def test_eval_report_shows_evidence_only_for_failures(tmp_path, monkeypatch):
     assert "**Tools called** fleet_status" in markdown
     preview = answer[:600].replace("\n", "\n    ")
     assert f"**Final answer**\n\n    {preview}…\n" in markdown
+
+
+@pytest.mark.parametrize("adapter", ["sqlite", "hexagon"])
+def test_eval_cli_filters_cases_and_only_starts_mock_for_hexagon(
+    tmp_path, monkeypatch, adapter
+):
+    runs = []
+    lifecycle = []
+    remote_eam = object()
+
+    @contextmanager
+    def in_process_mock():
+        lifecycle.append("started")
+        try:
+            yield remote_eam
+        finally:
+            lifecycle.append("stopped")
+
+    def run_adapter(name, db_path, items, expected, model, *, eam=None):
+        runs.append((name, [item["id"] for item in items], list(expected), eam))
+        return []
+
+    monkeypatch.setattr(eval_assistant, "REPORT", tmp_path / "filtered.md")
+    monkeypatch.setattr(eval_assistant, "chat_model_factory", EvalModel)
+    monkeypatch.setattr(eval_assistant, "_run_adapter", run_adapter)
+    monkeypatch.setattr(eval_assistant, "serve_mock", in_process_mock)
+
+    eval_assistant.main(["--adapter", adapter, "--only", "rank-3,rank-1", "engine-rul"])
+
+    ids = ["rank-1", "rank-3", "engine-rul"]
+    if adapter == "sqlite":
+        assert runs == [("SQLite", ids, ids, None)]
+        assert lifecycle == []
+    else:
+        assert runs == [("Hexagon", ids, ids, remote_eam)]
+        assert lifecycle == ["started", "stopped"]
+
+
+def test_eval_cli_rejects_unknown_case_before_starting_model(monkeypatch, capsys):
+    monkeypatch.setattr(
+        eval_assistant, "chat_model_factory", lambda: pytest.fail("Model started")
+    )
+    with pytest.raises(SystemExit) as error:
+        eval_assistant.main(["--only", "rank-1,typo"])
+    assert error.value.code == 2
+    assert "unknown case IDs: typo" in capsys.readouterr().err
